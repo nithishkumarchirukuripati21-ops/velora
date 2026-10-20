@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { evaluateSandboxAudit, isDemoTarget } from '@/lib/wcagEngine';
-import { auditLiveWebsite, normalizeTargetUrl } from '@/lib/liveAuditor';
+import { auditLiveWebsite, isPermittedUrl, normalizeTargetUrl } from '@/lib/liveAuditor';
 import { AgentLogMessage, AuditApiRequest, AuditApiResponse, WCAGLevel } from '@/types/audit';
 
 export async function POST(req: NextRequest) {
@@ -25,7 +25,34 @@ export async function POST(req: NextRequest) {
     // Case 1: Real Live Website Audit (External URL)
     if (!isDemoEnvironment) {
       const normalizedUrl = normalizeTargetUrl(rawUrl);
+
+      // SSRF Security Gate
+      const permission = isPermittedUrl(normalizedUrl);
+      if (!permission.valid) {
+        return NextResponse.json(
+          {
+            error: 'Security Policy Restriction',
+            message:
+              permission.reason ||
+              'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).',
+          },
+          { status: 400 }
+        );
+      }
+
       const liveResult = await auditLiveWebsite(normalizedUrl, targetLevel);
+
+      if (!liveResult.success) {
+        return NextResponse.json(
+          {
+            error: 'Network Retrieval Failure',
+            message: liveResult.error,
+            logs: liveResult.logs,
+          },
+          { status: liveResult.statusCode === 400 ? 400 : 502 }
+        );
+      }
+
       const auditId = 'live_' + Math.random().toString(36).substring(2, 9);
       const timestamp = new Date().toLocaleDateString('en-US', {
         month: 'short',

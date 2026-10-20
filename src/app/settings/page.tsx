@@ -37,7 +37,10 @@ export default function SettingsPage() {
   });
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
-  const [keyTestStatus, setKeyTestStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [keyTestStatus, setKeyTestStatus] = useState<{
+    status: 'live_ai' | 'fallback_rules' | 'error';
+    message: string;
+  } | null>(null);
 
   const levels: WCAGLevel[] = [
     'WCAG 2.1 Level A',
@@ -71,27 +74,27 @@ export default function SettingsPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        if (data.provider?.includes('Gemini')) {
+        if (data.status === 'live_ai') {
           setKeyTestStatus({
-            success: true,
-            message: `Connected! Verified live Google Gemini (gemini-1.5-flash) generation: "${data.remediation.explanation?.slice(0, 80)}..."`,
+            status: 'live_ai',
+            message: '✓ Connected to Google Gemini 1.5 Flash (Live AI Active)',
           });
         } else {
           setKeyTestStatus({
-            success: true,
-            message: `Key saved. (Engine is operating in high-performance deterministic WCAG rule template mode).`,
+            status: 'fallback_rules',
+            message: '⚠️ Gemini API key not active or failed. Using Deterministic WCAG Template Engine',
           });
         }
       } else {
         setKeyTestStatus({
-          success: false,
+          status: 'error',
           message: data.message || 'Gemini API test request failed. Verify your key.',
         });
       }
     } catch (err: unknown) {
       const error = err as Error;
       setKeyTestStatus({
-        success: false,
+        status: 'error',
         message: `Connection error: ${error.message}`,
       });
     } finally {
@@ -370,14 +373,20 @@ export default function SettingsPage() {
               {keyTestStatus && (
                 <div
                   className={`p-3 rounded-xl border text-xs font-mono transition-all ${
-                    keyTestStatus.success
-                      ? 'bg-blue-50 border-blue-200 text-blue-900'
+                    keyTestStatus.status === 'live_ai'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : keyTestStatus.status === 'fallback_rules'
+                      ? 'bg-amber-50 border-amber-200 text-amber-800'
                       : 'bg-rose-50 border-rose-200 text-rose-800'
                   }`}
                 >
                   <div className="flex items-start gap-2">
                     <span className="font-bold shrink-0">
-                      {keyTestStatus.success ? '✓' : '⚠️'}
+                      {keyTestStatus.status === 'live_ai'
+                        ? '✓'
+                        : keyTestStatus.status === 'fallback_rules'
+                        ? '⚠️'
+                        : '✕'}
                     </span>
                     <span>{keyTestStatus.message}</span>
                   </div>

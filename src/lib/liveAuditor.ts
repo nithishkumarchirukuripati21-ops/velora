@@ -25,6 +25,105 @@ export interface LiveAuditResult {
 }
 
 /**
+ * Strict URL validator to enforce SSRF protection.
+ * Rejects private RFC 1918 ranges, loopback, cloud metadata, and non-http(s) protocols.
+ */
+export function isPermittedUrl(rawUrl: string): { valid: boolean; reason?: string } {
+  const ssrfError =
+    'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).';
+
+  let parsed: URL;
+  try {
+    const urlString = rawUrl.trim();
+    if (!urlString) {
+      return { valid: false, reason: 'URL cannot be empty.' };
+    }
+    parsed = new URL(urlString.includes('://') ? urlString : `https://${urlString}`);
+  } catch {
+    return { valid: false, reason: 'Invalid URL format.' };
+  }
+
+  // 1. Protocol must strictly be http: or https:
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { valid: false, reason: 'Protocol must strictly be http: or https:.' };
+  }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  // 2. Reject localhost and known loopback hostnames
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname === '::'
+  ) {
+    return { valid: false, reason: ssrfError };
+  }
+
+  // Reject cloud metadata hostnames
+  if (
+    hostname === 'metadata.google.internal' ||
+    hostname === 'instance-data' ||
+    hostname.endsWith('.internal')
+  ) {
+    return { valid: false, reason: ssrfError };
+  }
+
+  // 3. Check IPv4 addresses (RFC 1918, loopback, link-local, cloud metadata)
+  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  const ipMatch = hostname.match(ipv4Regex);
+
+  if (ipMatch) {
+    const [_, o1, o2, o3, o4] = ipMatch.map(Number);
+
+    if (o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255) {
+      return { valid: false, reason: 'Invalid IP address octet.' };
+    }
+
+    // Loopback: 127.0.0.0/8 and 0.0.0.0/8
+    if (o1 === 127 || o1 === 0) {
+      return { valid: false, reason: ssrfError };
+    }
+
+    // RFC 1918 Private: 10.0.0.0/8
+    if (o1 === 10) {
+      return { valid: false, reason: ssrfError };
+    }
+
+    // RFC 1918 Private: 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
+    if (o1 === 172 && o2 >= 16 && o2 <= 31) {
+      return { valid: false, reason: ssrfError };
+    }
+
+    // RFC 1918 Private: 192.168.0.0/16
+    if (o1 === 192 && o2 === 168) {
+      return { valid: false, reason: ssrfError };
+    }
+
+    // Link-local & Cloud Metadata: 169.254.0.0/16 (includes 169.254.169.254)
+    if (o1 === 169 && o2 === 254) {
+      return { valid: false, reason: ssrfError };
+    }
+  }
+
+  // Check IPv6 private / link-local / loopback
+  if (
+    hostname.startsWith('fe80:') ||
+    hostname.startsWith('fc') ||
+    hostname.startsWith('fd')
+  ) {
+    return { valid: false, reason: ssrfError };
+  }
+
+  return { valid: true };
+}
+
+export type LiveAuditOutcome =
+  | ({ success: true } & LiveAuditResult)
+  | { success: false; error: string; statusCode?: number; logs: AgentLogMessage[] };
+
+/**
  * Normalizes input URL to include https:// if missing
  */
 export function normalizeTargetUrl(rawUrl: string): string {
@@ -43,14 +142,8 @@ export function normalizeTargetUrl(rawUrl: string): string {
 export async function auditLiveWebsite(
   rawUrl: string,
   targetLevel: WCAGLevel = 'WCAG 2.2 Level AA'
-): Promise<LiveAuditResult> {
+): Promise<LiveAuditOutcome> {
   const targetUrl = normalizeTargetUrl(rawUrl);
-  let domain = 'example.com';
-  try {
-    domain = new URL(targetUrl).hostname;
-  } catch {
-    domain = targetUrl;
-  }
 
   const logs: AgentLogMessage[] = [];
   const addLog = (phase: number, text: string, type: AgentLogMessage['type'] = 'info') => {
@@ -62,6 +155,26 @@ export async function auditLiveWebsite(
       type,
     });
   };
+
+  // SSRF Validation Gate
+  const urlCheck = isPermittedUrl(targetUrl);
+  if (!urlCheck.valid) {
+    const errorMsg = urlCheck.reason || 'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).';
+    addLog(1, `[Security Block] ${errorMsg}`, 'warn');
+    return {
+      success: false,
+      error: errorMsg,
+      statusCode: 400,
+      logs,
+    };
+  }
+
+  let domain = 'example.com';
+  try {
+    domain = new URL(targetUrl).hostname;
+  } catch {
+    domain = targetUrl;
+  }
 
   addLog(1, `Target configured: ${targetUrl} [${targetLevel}]`, 'info');
   addLog(1, `Resolving DNS and establishing secure TLS connection to ${domain}...`, 'info');
@@ -95,16 +208,29 @@ export async function auditLiveWebsite(
 
     clearTimeout(timeout);
     statusCode = res.status;
+
+    if (!res.ok) {
+      addLog(2, `Target returned HTTP status ${res.status}. Halting audit.`, 'warn');
+      return {
+        success: false,
+        error: 'Network Retrieval Failure: Unable to fetch target URL. Verify the host is publicly reachable.',
+        statusCode: res.status,
+        logs,
+      };
+    }
+
     html = await res.text();
     byteSize = Buffer.byteLength(html, 'utf8');
 
     addLog(2, `HTTP Response received: Status ${statusCode} (${Math.round(byteSize / 1024)} KB payload)`, 'action');
   } catch (err: unknown) {
     const error = err as Error;
-    addLog(2, `Failed to retrieve live DOM over HTTP: ${error.message}. Analyzing fallback inspection...`, 'warn');
-    // Fallback minimal DOM to avoid crashing
-    html = `<!DOCTYPE html><html><head><title>${domain}</title></head><body><h1>${domain}</h1><p>Website unreachable or blocked automated audit.</p></body></html>`;
-    byteSize = Buffer.byteLength(html, 'utf8');
+    addLog(2, `Network Retrieval Failure: ${error.message}`, 'warn');
+    return {
+      success: false,
+      error: 'Network Retrieval Failure: Unable to fetch target URL. Verify the host is publicly reachable.',
+      logs,
+    };
   }
 
   addLog(2, `Decomposing live document tree against WCAG 2.1 / 2.2 Level AA rule matrix...`, 'action');
@@ -119,7 +245,7 @@ export async function auditLiveWebsite(
   const allImages = $('img');
   const formInputs = $('input, select, textarea').not('[type="hidden"], [type="submit"], [type="reset"], [type="button"]');
   const domStats = {
-    totalNodes: Math.max(totalNodes, 50),
+    totalNodes: totalNodes, // Real parsed DOM node count (No artificial padding)
     headings: { h1: h1Count, h2: h2Count, h3: h3Count },
     images: allImages.length,
     formControls: formInputs.length,
@@ -129,7 +255,7 @@ export async function auditLiveWebsite(
   addLog(3, `[Agent] Document title resolved: "${pageTitle.slice(0, 50)}${pageTitle.length > 50 ? '...' : ''}"`, 'info');
 
   const issues: Issue[] = [];
-  let passedRulesCount = 38;
+  let passedRulesCount = 0; // Calculated from actual checks evaluated against the DOM
 
   // 1. WCAG 1.1.1: Images Missing Alt Attributes
   const brokenImages = $('img:not([alt]), img[alt=""]');
@@ -493,6 +619,28 @@ export async function auditLiveWebsite(
     passedRulesCount += 2;
   }
 
+  // Additional Real DOM Conformance Checks
+  const viewportMeta = $('meta[name="viewport"]').attr('content') || '';
+  if (!viewportMeta.includes('user-scalable=no') && !viewportMeta.includes('maximum-scale=1.0')) {
+    passedRulesCount += 1; // WCAG 1.4.4 Resize text
+  }
+
+  if ($('main, [role="main"]').length > 0) {
+    passedRulesCount += 1; // WCAG 2.4.1 Bypass Blocks (Main landmark)
+  }
+
+  if ($('nav, [role="navigation"]').length > 0) {
+    passedRulesCount += 1; // WCAG 1.3.1 Landmark structure (Nav)
+  }
+
+  if ($('header, [role="banner"]').length > 0) {
+    passedRulesCount += 1; // WCAG 1.3.1 Landmark structure (Header)
+  }
+
+  if ($('footer, [role="contentinfo"]').length > 0) {
+    passedRulesCount += 1; // WCAG 1.3.1 Landmark structure (Footer)
+  }
+
   // Calculate score
   let score = 100;
   for (const iss of issues) {
@@ -509,6 +657,7 @@ export async function auditLiveWebsite(
   );
 
   return {
+    success: true,
     url: targetUrl,
     domain,
     pageTitle,

@@ -214,5 +214,6 @@ export interface RetestApiResponse {
   issueId: string;
   resolved: boolean;
   message: string;
+  state?: 'resolved' | 'failed' | 'uncertain';
   visualDiff?: VisualDiffEvidence;
 }

@@ -86,6 +86,7 @@ You must respond with ONLY a valid, parseable JSON object matching this exact sc
             console.log(`[AI Engine] Successfully generated real LLM remediation patch via Gemini 1.5 Flash.`);
             return NextResponse.json({
               success: true,
+              status: 'live_ai',
               provider: 'Google Gemini (gemini-1.5-flash)',
               remediation: {
                 explanation: parsed.explanation || 'Remediated for full WCAG 2.2 AA compliance.',
@@ -121,6 +122,7 @@ You must respond with ONLY a valid, parseable JSON object matching this exact sc
 
     return NextResponse.json({
       success: true,
+      status: 'fallback_rules',
       provider: 'Deterministic WCAG Template Engine',
       fallback: true,
       remediation: fallbackRemediation,

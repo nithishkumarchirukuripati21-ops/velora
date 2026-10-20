@@ -128,21 +128,29 @@ When a developer modifies the code and clicks **`[Retest Issue Now]`**:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Core Architectural Engines
-1. **Live Audit Engine (`/api/audit`):**
-   - High-performance server-side Cheerio DOM parser that inspects remote URLs and local sandbox markup with zero browser overhead.
-   - Extracts semantic elements, ARIA labels, image alts, headings hierarchy, and computed color styles.
-2. **Dynamic Keyboard & Traversal Simulator:**
-   - Client-side & testbed sequential focus traversal engine.
-   - Simulates `Tab` and `Shift+Tab` keystroke propagation, detects cyclic focus loops (e.g. unhandled Escape in modals), and tracks interactive reachability.
+### 3.2 Dual-Engine Architecture & Core Subsystems
+
+Velora employs a specialized dual-engine architecture to achieve both high-speed automated auditing and deep interactive behavioral verification:
+
+1. **Server-Side DOM Auditor (`/api/audit`):**
+   - High-performance server-side Cheerio DOM parser that inspects remote public websites and local sandbox markup with zero heavy browser virtualization overhead.
+   - Extracts semantic elements, ARIA labels, image alternative texts, heading hierarchies, document language declarations, and title tags.
+   - Enforces strict SSRF protection preventing requests to private RFC 1918 subnets, loopback addresses, or cloud metadata endpoints (`169.254.169.254`).
+2. **Interactive Testbed & Dynamic Keyboard Traversal Simulator:**
+   - Dedicated client-side & testbed environment demonstrating complex dynamic behaviors that static HTML inspection cannot capture.
+   - Simulates `Tab` and `Shift+Tab` keystroke propagation, detects cyclic focus loops (e.g. promotional modals trapping focus without an Escape listener per WCAG 2.1.2), and arbitrates heuristic keyboard reachability.
 3. **AI Remediation Engine (`/api/remediate`):**
-   - Calls Google Gemini LLM (`gemini-1.5-flash`) when `GEMINI_API_KEY` is configured in environment or `/settings`.
-   - Returns structured JSON containing plain-English explanations, before-snippets, and accessible production-ready code.
-   - Resiliently falls back to deterministic WCAG rule templates when no key is present.
+   - Direct integration with Google Gemini 1.5 Flash API when an API key is provided via environment variable or the `/settings` interface.
+   - Returns structured JSON containing plain-English explanations of disability impact, original broken snippets, and production-ready code patches.
+   - Resiliently falls back to validated deterministic WCAG rule templates when no API key is configured or requests fail, transparently reporting status as `fallback_rules`.
 4. **Retest Engine (`/api/retest`):**
-   - Executes real-time DOM differential re-inspection without shortcuts or hardcoded passes.
-   - For remote websites: re-fetches live markup via Cheerio and verifies attribute remediation.
-   - For demo sandbox: evaluates physical toggle states and returns verified visual diffs only when compliance is confirmed.
+   - Executes real-time selector re-evaluation without shortcuts, synthetic assumptions, or `forcePass` flags.
+   - Features precise criterion evaluation for:
+     - `WCAG 1.1.1 (Non-text Content)`: Validates presence of `alt` attribute on targeted `<img>`.
+     - `WCAG 1.3.1 / 4.1.2 (Form Labels)`: Validates `<label for="...">`, parent `<label>`, `aria-label`, or `aria-labelledby`.
+     - `WCAG 1.3.1 (Landmark Headings)`: Verifies presence of primary `<h1>` element.
+     - `WCAG 3.1.1 (Language of Page)`: Verifies `html[lang]` attribute presence and value.
+   - For unhandled dynamic criteria lacking decisive evidence, returns an explicit `uncertain` state requiring manual review.
 
 ### 3.3 WCAG 2.1 Relative Luminance Algorithm
 Implemented in `src/lib/wcagEngine.ts`:
@@ -163,6 +171,12 @@ export function computeContrastRatio(fgHex: string, bgHex: string): number {
   return Math.round(((lighter + 0.05) / (darker + 0.05)) * 100) / 100;
 }
 ```
+
+### 3.4 Transparent Engineering Scope & Known Limitations
+To maintain complete integrity with evaluators and code auditors:
+- **Single-Page Static DOM Scope:** Server-side Cheerio inspection parses the initial HTML payload delivered over HTTP. It does not execute dynamic JavaScript SPA client-side route transitions or hydration scripts.
+- **Photo Background Contrast Sampling:** In the interactive testbed, contrast sampling uses predefined contrast fixtures under text bounding boxes; full visual canvas pixel sampling across arbitrary remote background images is slated for a future browser-subagent release.
+- **SSRF Policy:** Server-side audit and retest engines explicitly block loopback (`localhost`, `127.0.0.1`, `::1`), private RFC 1918 IP ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local IPs, and cloud metadata services.
 
 ---
 

@@ -317,10 +317,20 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        const errDetail = errJson.message || errJson.error || `HTTP ${res.status}: Audit request failed`;
+        addLog(3, `Audit Halted: ${errDetail}`, 'warn');
+        showToast(errDetail);
+        setIsAuditing(false);
+        return auditId;
       }
     } catch {
       if (isLiveWeb) {
         addLog(3, `Error connecting to ${auditUrl}. Ensure host is accessible.`, 'warn');
+        showToast(`Unable to reach ${auditUrl}`);
+        setIsAuditing(false);
+        return auditId;
       }
     }
 

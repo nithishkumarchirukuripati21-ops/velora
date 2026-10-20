@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { evaluateRetest, isDemoTarget } from '@/lib/wcagEngine';
+import { isPermittedUrl } from '@/lib/liveAuditor';
 import { RetestApiRequest, RetestApiResponse, VisualDiffEvidence } from '@/types/audit';
 import * as cheerio from 'cheerio';
 
@@ -32,6 +33,21 @@ export async function POST(req: NextRequest) {
 
     // Case 1: Handle Live Web Issue Retest
     if (isLiveUrl) {
+      if (targetUrl) {
+        const permission = isPermittedUrl(targetUrl);
+        if (!permission.valid) {
+          return NextResponse.json(
+            {
+              error: 'Security Policy Restriction',
+              message:
+                permission.reason ||
+                'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
       let domain = 'remote host';
       try {
         if (targetUrl && /^https?:\/\//i.test(targetUrl)) {
@@ -41,120 +57,213 @@ export async function POST(req: NextRequest) {
         domain = targetUrl || 'remote host';
       }
 
-      let stillFailing = true;
-
+      let html = '';
       if (targetUrl) {
         try {
-          let res = await fetch(targetUrl, {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(targetUrl, {
             headers: {
               Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.9',
             },
-            signal: AbortSignal.timeout(7000),
+            signal: controller.signal,
           });
+          clearTimeout(timeout);
 
-          if (res.status >= 400) {
-            try {
-              const retryRes = await fetch(targetUrl, { signal: AbortSignal.timeout(7000) });
-              if (retryRes.status < 400) {
-                res = retryRes;
-              }
-            } catch {
-              // keep res
-            }
+          if (!res.ok) {
+            return NextResponse.json({
+              success: true,
+              issueId,
+              resolved: false,
+              message: `Retest Failed: Remote server at ${domain} returned HTTP ${res.status}.`,
+            } as RetestApiResponse);
           }
-          const html = await res.text();
-          const $ = cheerio.load(html);
-
-          // Verify if selector or issue still exists
-          if (issueId.includes('IMG-ALT')) {
-            try {
-              const targetEl = $(targetSelector);
-              if (targetEl.length > 0) {
-                const alt = targetEl.attr('alt');
-                stillFailing = typeof alt === 'undefined' || alt.trim() === '';
-              } else {
-                stillFailing = $('img:not([alt]), img[alt=""]').length > 0;
-              }
-            } catch {
-              stillFailing = true;
-            }
-          } else if (issueId.includes('FORM-LABEL')) {
-            try {
-              const targetEl = $(targetSelector);
-              if (targetEl.length > 0) {
-                const id = targetEl.attr('id');
-                const aria = targetEl.attr('aria-label');
-                const title = targetEl.attr('title');
-                const hasLabel =
-                  (id && $(`label[for="${id}"]`).length > 0) ||
-                  !!(aria && aria.trim()) ||
-                  !!(title && title.trim()) ||
-                  targetEl.closest('label').length > 0;
-                stillFailing = !hasLabel;
-              } else {
-                stillFailing = true;
-              }
-            } catch {
-              stillFailing = true;
-            }
-          } else if (issueId.includes('H1-MISSING')) {
-            stillFailing = $('h1').length === 0;
-          } else if (issueId.includes('LANG')) {
-            const lang = $('html[lang]').attr('lang') || $('html').attr('lang');
-            stillFailing = !lang || lang.trim().length === 0;
-          } else if (issueId.includes('EMPTY-CTRL') || issueId.includes('EMPTY-INTERACTIVE')) {
-            try {
-              const targetEl = $(targetSelector);
-              if (targetEl.length > 0) {
-                const text = targetEl.text().trim();
-                const aria = targetEl.attr('aria-label');
-                stillFailing = !text && !aria;
-              } else {
-                stillFailing = true;
-              }
-            } catch {
-              stillFailing = true;
-            }
-          } else {
-            try {
-              stillFailing = $(targetSelector).length > 0;
-            } catch {
-              stillFailing = true;
-            }
-          }
-        } catch {
-          stillFailing = true;
+          html = await res.text();
+        } catch (fetchErr: unknown) {
+          const error = fetchErr as Error;
+          return NextResponse.json({
+            success: true,
+            issueId,
+            resolved: false,
+            message: `Retest Failed: Unable to fetch live DOM from ${domain} (${error.message}).`,
+          } as RetestApiResponse);
         }
       }
 
-      const visualDiff: VisualDiffEvidence = {
-        retestTimestamp: timestamp,
-        verifierAgent: 'Velora Live DOM Retest Agent',
-        beforeState: {
-          label: 'Initial Audit State',
-          statusBadge: 'FAIL: Barrier Recorded in Live Target DOM',
-          previewText: targetSelector,
-        },
-        afterState: {
-          label: stillFailing ? 'Retest State (Still Non-Compliant)' : 'Retest State (Remediated)',
-          statusBadge: stillFailing
-            ? `FAIL: Actively Non-Compliant on ${domain}`
-            : `PASS: Remediated on ${domain}`,
-          previewText: targetSelector,
-        },
-      };
+      const $ = cheerio.load(html);
 
-      const message = stillFailing
-        ? `Retest Failed: Issue is still actively detected on the remote server at ${domain}. (Target element: ${targetSelector} remains non-compliant).`
-        : `Verified: Barrier remediated in live DOM on ${domain}. Target element ${targetSelector} is compliant.`;
+      // 1. WCAG 1.1.1 (Image Alt)
+      if (issueId.includes('IMG-ALT') || targetSelector.startsWith('img')) {
+        const targetEl = $(targetSelector);
+        if (targetEl.length === 0) {
+          return NextResponse.json({
+            success: true,
+            issueId,
+            resolved: false,
+            message: `Retest Failed: Target element (${targetSelector}) not found in live DOM.`,
+          } as RetestApiResponse);
+        }
+        const alt = targetEl.attr('alt');
+        const isResolved = typeof alt !== 'undefined';
+        const message = isResolved
+          ? `Verified: Element ${targetSelector} specifies accessible alt attribute (alt="${alt}").`
+          : `Retest Failed: Element ${targetSelector} is still missing an alt attribute in live DOM on ${domain}.`;
 
+        return NextResponse.json({
+          success: true,
+          issueId,
+          resolved: isResolved,
+          state: isResolved ? 'resolved' : 'failed',
+          message,
+          visualDiff: {
+            retestTimestamp: timestamp,
+            verifierAgent: 'Velora Live DOM Retest Agent',
+            beforeState: {
+              label: 'Initial Audit State',
+              statusBadge: 'FAIL: Missing Alt Attribute',
+              previewText: targetSelector,
+            },
+            afterState: {
+              label: isResolved ? 'Remediated State' : 'Still Non-Compliant',
+              statusBadge: isResolved ? `PASS: alt="${alt}" verified` : 'FAIL: Missing Alt Attribute',
+              previewText: targetSelector,
+            },
+          },
+        } as RetestApiResponse);
+      }
+
+      // 2. WCAG 1.3.1 / 4.1.2 (Form Label)
+      if (issueId.includes('FORM-LABEL') || targetSelector.match(/^(input|select|textarea)/i)) {
+        const targetEl = $(targetSelector);
+        if (targetEl.length === 0) {
+          return NextResponse.json({
+            success: true,
+            issueId,
+            resolved: false,
+            message: `Retest Failed: Target form control (${targetSelector}) not found in live DOM.`,
+          } as RetestApiResponse);
+        }
+        const id = targetEl.attr('id');
+        const ariaLabel = targetEl.attr('aria-label');
+        const ariaLabelledby = targetEl.attr('aria-labelledby');
+        const title = targetEl.attr('title');
+        const hasForLabel = id ? $(`label[for="${id}"]`).length > 0 : false;
+        const hasParentLabel = targetEl.closest('label').length > 0;
+        const hasAria = !!(ariaLabel && ariaLabel.trim().length > 0);
+        const hasAriaLabelledby = !!(ariaLabelledby && $(`#${ariaLabelledby}`).length > 0);
+        const hasTitle = !!(title && title.trim().length > 0);
+
+        const isResolved = hasForLabel || hasParentLabel || hasAria || hasAriaLabelledby || hasTitle;
+        const message = isResolved
+          ? `Verified: Form control (${targetSelector}) has valid programmatic label/ARIA in live DOM.`
+          : `Retest Failed: Form control (${targetSelector}) still lacks programmatic label on ${domain}.`;
+
+        return NextResponse.json({
+          success: true,
+          issueId,
+          resolved: isResolved,
+          state: isResolved ? 'resolved' : 'failed',
+          message,
+          visualDiff: {
+            retestTimestamp: timestamp,
+            verifierAgent: 'Velora Live DOM Retest Agent',
+            beforeState: {
+              label: 'Initial Audit State',
+              statusBadge: 'FAIL: Missing Accessible Label',
+              previewText: targetSelector,
+            },
+            afterState: {
+              label: isResolved ? 'Remediated State' : 'Still Non-Compliant',
+              statusBadge: isResolved ? 'PASS: Programmatic Label Verified' : 'FAIL: Missing Label',
+              previewText: targetSelector,
+            },
+          },
+        } as RetestApiResponse);
+      }
+
+      // 3. WCAG 1.3.1 (H1 Landmark)
+      if (issueId.includes('H1-MISSING') || targetSelector.includes('h1')) {
+        const hasH1 = $('h1').length > 0;
+        const message = hasH1
+          ? `Verified: Document contains primary <h1> landmark ("${$('h1').first().text().trim().slice(0, 40)}...").`
+          : `Retest Failed: Document still lacks an <h1> heading in live DOM on ${domain}.`;
+
+        return NextResponse.json({
+          success: true,
+          issueId,
+          resolved: hasH1,
+          state: hasH1 ? 'resolved' : 'failed',
+          message,
+          visualDiff: {
+            retestTimestamp: timestamp,
+            verifierAgent: 'Velora Live DOM Retest Agent',
+            beforeState: {
+              label: 'Initial Audit State',
+              statusBadge: 'FAIL: No H1 Heading Landmark',
+              previewText: 'main, body',
+            },
+            afterState: {
+              label: hasH1 ? 'Remediated State' : 'Still Non-Compliant',
+              statusBadge: hasH1 ? 'PASS: <h1> Landmark Verified' : 'FAIL: Missing H1',
+              previewText: 'h1',
+            },
+          },
+        } as RetestApiResponse);
+      }
+
+      // 4. WCAG 3.1.1 (Language of Page)
+      if (issueId.includes('LANG') || targetSelector.includes('html')) {
+        const lang = $('html').attr('lang') || $('html[lang]').attr('lang');
+        const isResolved = !!(lang && lang.trim().length > 0);
+        const message = isResolved
+          ? `Verified: Document specifies valid language attribute (lang="${lang}").`
+          : `Retest Failed: <html> element still lacks lang attribute in live DOM on ${domain}.`;
+
+        return NextResponse.json({
+          success: true,
+          issueId,
+          resolved: isResolved,
+          state: isResolved ? 'resolved' : 'failed',
+          message,
+          visualDiff: {
+            retestTimestamp: timestamp,
+            verifierAgent: 'Velora Live DOM Retest Agent',
+            beforeState: {
+              label: 'Initial Audit State',
+              statusBadge: 'FAIL: Missing html[lang]',
+              previewText: '<html>',
+            },
+            afterState: {
+              label: isResolved ? 'Remediated State' : 'Still Non-Compliant',
+              statusBadge: isResolved ? `PASS: lang="${lang}" Verified` : 'FAIL: Missing lang',
+              previewText: `<html lang="${lang || ''}">`,
+            },
+          },
+        } as RetestApiResponse);
+      }
+
+      // 5. Unhandled / Dynamic Criteria: Return an uncertain state per Step 3 of brief
       return NextResponse.json({
         success: true,
         issueId,
-        resolved: !stillFailing,
-        message,
-        visualDiff,
+        resolved: false,
+        state: 'uncertain',
+        message: 'Static re-test inconclusive: Criterion requires manual review or dynamic runtime evaluation.',
+        visualDiff: {
+          retestTimestamp: timestamp,
+          verifierAgent: 'Velora Differential Retest Engine',
+          beforeState: {
+            label: 'Initial Audit State',
+            statusBadge: 'UNCERTAIN: Dynamic Evaluation Required',
+            previewText: targetSelector,
+          },
+          afterState: {
+            label: 'Static Inspection Inconclusive',
+            statusBadge: 'UNCERTAIN: Manual Review Required',
+            previewText: targetSelector,
+          },
+        },
       } as RetestApiResponse);
     }
 
