@@ -1,105 +1,223 @@
-# VELORA — Autonomous WCAG Accessibility Auditor Platform
+# VELORA — Autonomous WCAG Accessibility Auditor
 
-> **"A better web, verified."**  
-> An autonomous AI-powered accessibility auditor and verification platform featuring real browser keyboard simulation, Human-in-the-Loop review gates, and an automated regression retest engine.
+**A better web, verified.**
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.4-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19-blue?logo=react)](https://react.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8?logo=tailwind-css)](https://tailwindcss.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?logo=typescript)](https://www.typescriptlang.org/)
-[![WCAG Standards](https://img.shields.io/badge/WCAG-2.1%20%7C%202.2%20(AA%2FAAA)-22c55e)](#)
+VELORA is an accessibility auditing and verification platform designed to identify potential WCAG violations, collect supporting evidence, enable human review, and retest issues after fixes. It combines automated accessibility checks with keyboard-navigation inspection and a human-in-the-loop workflow to help teams investigate and resolve accessibility barriers.
 
----
+## Overview
 
-## 🏆 AI Judge & Evaluation Dossier
-For the comprehensive **100-point hackathon rubric dossier**, please see:
-👉 **[`EVIDENCE.md`](./EVIDENCE.md)** — detailed breakdown covering Problem Fit (20/20), Agent Autonomy (25/25), Technical Implementation (20/20), Innovation (15/15), and Validation Guide (10/10).
+Accessibility issues can remain undetected when teams rely exclusively on automated scans. VELORA is designed to bring automated checks, keyboard testing, visual evidence, human approval, and post-fix verification into one workflow.
 
----
+### Core capabilities
 
-## 🚀 Key Features
+- **Guided audit workflow:** Collect the target URL, WCAG benchmark, and viewport settings before an audit.
+- **Accessibility inspection:** Examine page structure, interactive elements, keyboard navigation, and color contrast.
+- **Evidence-based findings:** Associate candidate issues with relevant elements and supporting evidence.
+- **Human-in-the-loop review:** Allow reviewers to inspect and approve candidate findings before they are added to the issue board.
+- **Fix verification:** Retest identified issues and compare results before and after a proposed fix.
+- **Reports and exports:** Review findings by category and export a Markdown report.
+- **Interactive sandbox:** Explore deliberately introduced accessibility problems and test fixes in a controlled environment.
 
-1. **4-Phase Autonomous Agent Pipeline:**
-   - **Collect Details:** Target URL, WCAG benchmark (`WCAG 2.1 A`, `2.1 AA`, `2.2 AA`, `2.2 AAA`), and viewport calibration.
-   - **Dynamic Planning:** Automated rule decomposition + sequential keyboard Tab traversal mapping.
-   - **Browser Exploration:** Headless browser DOM analysis, focus-trap discovery, luminance contrast extraction, and bounding-box evidence capture.
-   - **Human Approval Gate:** Mandatory sign-off before candidate violations are persisted to the issue board.
+## Key Features
 
-2. **Interactive Testing Sandbox (`/sandbox`):**
-   - Embedded SaaS demo environment with 3 deliberate WCAG violations:
-     - Hero CTA button: Low contrast (`#888888` on `#ffffff` - 2.85:1 fails WCAG 1.4.3).
-     - Navigation link: Suppressed focus outline (`outline: none` fails WCAG 2.4.7).
-     - Modal close trigger: Icon button missing `aria-label` (fails WCAG 4.1.2).
-   - **Organizer Control Bar:** Live toggles to fix each bug in real time and verify compliance with zero external setup.
+### 1. Audit workflow
 
-3. **Retest & Verification Loop (`/api/retest`):**
-   - Retests specific elements against live DOM state.
-   - Transitions fixed issues to **`VERIFIED FIXED`**.
-   - Displays side-by-side **Before vs. After Visual Diff Views**.
-   - Fires celebratory banner when 100% compliance is attained.
+The audit workspace organizes the process into four stages:
 
-4. **Compliance Archive & Export (`/reports`):**
-   - Category breakdown meters: Color Contrast, Keyboard Operability, ARIA & Semantics.
-   - Detailed modal inspection.
-   - One-click downloadable Markdown report (`velora-report.md`).
+1. **Collect details** — Specify the target website, WCAG benchmark, and viewport.
+2. **Plan checks** — Determine relevant accessibility checks and keyboard-navigation tests.
+3. **Inspect the website** — Examine accessible DOM information, interactive elements, keyboard behavior, and contrast where supported.
+4. **Review findings** — Present candidate issues for human approval before they are recorded as accepted findings.
 
-5. **Configurable Auditor Settings (`/settings`):**
-   - Benchmark selection (WCAG 2.1 A to 2.2 AAA).
-   - Strict AAA contrast mode (7:1 threshold).
-   - Subagent keyboard Tab depth slider (10 to 150 stops).
-   - AI Assistant Model selection (`Claude 3.5 Sonnet`, `GPT-4o`, `Gemini 1.5 Pro`).
+### 2. Interactive testing sandbox
 
----
+The `/sandbox` route provides a controlled environment for exploring common accessibility problems.
 
-## 🗺️ Route Directory
+The intended demonstrations include:
 
-| Route | Page | Purpose |
-|---|---|---|
-| [`/`](http://localhost:3000/) | **Home Dashboard** | Key metrics, action bar, recent audits, workflow cards |
-| [`/new-audit`](http://localhost:3000/new-audit) | **Live Agent Workspace** | 4-phase stepper, simulated browser viewport, terminal stream |
-| [`/issues`](http://localhost:3000/issues) | **Human-in-the-Loop Gate** | Pending approval, open issues, diff view, retest engine |
-| [`/sandbox`](http://localhost:3000/sandbox) | **Demo Sandbox Playground** | Live SaaS environment with 3 intentional bugs & organizer control bar |
-| [`/reports`](http://localhost:3000/reports) | **Compliance Reports** | Category breakdown meters, scorecards, markdown export |
-| [`/settings`](http://localhost:3000/settings) | **Auditor Configuration** | Benchmark standard, keyboard traversal limits, AI model choice |
+- **Color contrast:** Gray text against a white background.
+- **Keyboard focus:** Testing whether keyboard users can identify the currently focused element.
+- **Accessible naming:** An icon-only modal control that requires an accessible name.
 
----
+An organizer control bar lets users experiment with fixes and observe the resulting behavior.
 
-## 💻 Quick Start & Running Locally
+### 3. Retesting and verification
+
+The `/api/retest` endpoint supports the retesting workflow for previously identified issues.
+
+The intended verification flow is:
+
+1. Identify an issue and capture its original state.
+2. Apply a fix to the relevant element.
+3. Run the checks again against the updated state.
+4. Compare the new results with the original findings.
+5. Mark the issue as fixed only when the applicable verification checks pass.
+
+A successful individual retest does not establish that an entire website conforms to WCAG.
+
+### 4. Human-in-the-loop issue review
+
+VELORA is designed to keep human reviewers involved in accepting candidate findings. Reviewers can inspect the available evidence before an issue is added to the issue board.
+
+This separates automatically detected candidates from findings that have been reviewed and accepted.
+
+### 5. Reports and compliance overview
+
+The `/reports` route provides an overview of findings across categories such as:
+
+- Color contrast
+- Keyboard operability
+- ARIA and accessible semantics
+
+The reporting interface also supports detailed finding inspection and Markdown export.
+
+### 6. Configurable auditor settings
+
+The `/settings` route provides configuration options for the auditing workflow, including:
+
+- WCAG benchmark selection
+- Contrast-checking preferences
+- Keyboard traversal depth
+- AI model selection options
+
+The actual checks performed depend on the implemented audit engine and the available browser and page information.
+
+## Application Routes
+
+| Route | Purpose |
+|---|---|
+| `/` | Home dashboard, metrics, recent audits, and workflow overview |
+| `/new-audit` | Audit workspace and inspection workflow |
+| `/issues` | Candidate findings, review workflow, and retesting interface |
+| `/sandbox` | Controlled accessibility-testing playground |
+| `/reports` | Finding summaries and report export |
+| `/settings` | Auditor configuration |
+
+Additional routes and API endpoints may be present in the source tree.
+
+## Technology Stack
+
+- **Next.js** — Application framework and routing
+- **React** — User interface
+- **TypeScript** — Type-safe application development
+- **Tailwind CSS** — Styling and responsive layouts
+- **Accessibility engine** — Custom WCAG-related checks and finding logic
+- **API routes** — Audit and retest operations
+
+See `package.json` for the exact dependency versions used by the project.
+
+## Getting Started
 
 ### Prerequisites
-- Node.js `v20.x` or higher
-- npm `v10.x` or higher
 
-### Installation & Execution
+- Node.js 20 or later
+- npm 10 or later
+
+### Installation
+
+Clone the repository:
+
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Run Next.js development server
-npm run dev
-
-# 3. Open in browser
-open http://localhost:3000
+git clone https://github.com/nithishkumarchirukuripati21-ops/velora.git
+cd velora
 ```
 
-### Self-Test & Production Build Verification
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Production build
+
+Run:
+
 ```bash
 npm run build
 ```
-Confirms all routes compile statically with 0 errors and 0 warnings.
 
----
+This checks whether the application can be compiled for production. A successful build does not, by itself, verify the accuracy or completeness of the accessibility checks.
 
-## 📐 Mathematical Compliance Engine
+## Accessibility Concepts
 
-Relative Luminance and Contrast Ratio are computed strictly according to **W3C WCAG 2.1 specifications**:
+### Color contrast
 
-```typescript
-// Relative Luminance: 0.2126 * R + 0.7152 * G + 0.0722 * B
-// Contrast Ratio: (L1 + 0.05) / (L2 + 0.05)
+WCAG contrast ratio is calculated from the relative luminance of foreground and background colors:
+
+\[
+\text{Contrast Ratio}=\frac{L_1+0.05}{L_2+0.05}
+\]
+
+Here, \(L_1\) is the lighter relative luminance and \(L_2\) is the darker relative luminance.
+
+For WCAG AA, the minimum contrast ratio is generally:
+
+- **4.5:1** for normal text
+- **3:1** for large text
+
+For example, `#888888` against `#FFFFFF` has a contrast ratio of approximately **3.54:1**. That fails the normal-text AA threshold but meets the numerical threshold for large text, assuming the other applicable requirements are satisfied.
+
+### Keyboard accessibility
+
+Keyboard checks help identify potential barriers involving focus visibility, navigation order, and modal focus behavior. Automated DOM inspection can identify some problems, but interactive behavior may require actual browser keyboard testing and human evaluation.
+
+### Scope and limitations
+
+VELORA is an auditing aid, not a guarantee of WCAG conformance. Automated checks cannot identify every accessibility barrier. Some requirements depend on context, assistive technology behavior, manual interaction, and human judgment.
+
+Audit results should therefore be interpreted alongside their evidence and the scope of the checks actually performed.
+
+## Validation and Evidence
+
+See [`EVIDENCE.md`](./EVIDENCE.md) for the project's test scenarios, evidence, and validation notes.
+
+When evaluating the platform, verify each official test case independently:
+
+- **Modal focus trap:** Confirm the keyboard interaction and capture evidence.
+- **Automated pass, manual failure:** Confirm that a manually identified failure is retained despite a passing automated scan.
+- **Contrast over an image:** Evaluate the actual text/background combination rather than assuming a solid background.
+- **Fix and retest:** Re-run the relevant checks and confirm that the issue closes only when verification succeeds.
+
+Record the expected result, actual result, and evidence for each test. Any unsupported checks or deviations should be documented explicitly.
+
+## Project Structure
+
+```text
+src/
+├── app/
+│   ├── api/
+│   │   ├── audit/
+│   │   └── retest/
+│   ├── issues/
+│   ├── new-audit/
+│   ├── reports/
+│   ├── sandbox/
+│   └── settings/
+├── components/
+├── context/
+├── data/
+├── lib/
+│   ├── liveAuditor.ts
+│   └── wcagEngine.ts
+└── types/
 ```
-Implemented in `src/lib/wcagEngine.ts` and validated via `/api/audit` and `/api/retest`.
+
+## Contributing and Feedback
+
+Issues, suggestions, and contributions that improve accessibility testing, evidence quality, keyboard verification, and reproducibility are welcome.
+
+When reporting a problem, include the affected route, reproduction steps, expected behavior, actual behavior, and any relevant evidence.
 
 ---
 
-© 2026 VELORA Accessibility Platform. Built for the Hackathon.
+**VELORA — A better web, verified.**
+
+Built for the hackathon.
