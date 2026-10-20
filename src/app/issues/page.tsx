@@ -811,7 +811,7 @@ export default function IssuesPage() {
                           <button
                             type="button"
                             disabled={isItemRetesting}
-                            onClick={() => retestIssue(issue.id, isDemo)}
+                            onClick={() => retestIssue(issue.id)}
                             className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-xs transition-all flex items-center gap-2 disabled:opacity-75 cursor-pointer"
                           >
                             <RotateCw

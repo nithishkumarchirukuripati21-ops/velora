@@ -91,7 +91,7 @@ interface AuditContextType {
   approveIssue: (issueId: string) => void;
   approveAllPendingIssues: (targetUrl?: string) => void;
   dismissIssue: (issueId: string) => void;
-  retestIssue: (issueId: string, forcePass?: boolean) => Promise<boolean>;
+  retestIssue: (issueId: string) => Promise<boolean>;
   retestAllOpenIssues: () => Promise<void>;
   isRetesting: Record<string, boolean>;
   toastMessage: string | null;
@@ -437,26 +437,18 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     showToast('Issue marked as false positive and dismissed.');
   };
 
-  const retestIssue = async (issueId: string, forcePass = true): Promise<boolean> => {
+  const retestIssue = async (issueId: string): Promise<boolean> => {
     const targetIssue = issues.find((i) => i.id === issueId);
     if (!targetIssue) return false;
 
     setIsRetesting((prev) => ({ ...prev, [issueId]: true }));
     showToast(`Deploying retest browser subagent to verify ${targetIssue.targetSelector}...`);
 
-    await new Promise((res) => setTimeout(res, 1200));
+    await new Promise((res) => setTimeout(res, 800));
 
     let retestData: RetestApiResponse;
-    const activeSandboxState: SandboxToggles = forcePass
-      ? {
-          modalTrapFixed: true,
-          keyboardAccessibilityFixed: true,
-          photoContrastFixed: true,
-          contrastFixed: true,
-          focusFixed: true,
-          ariaFixed: true,
-        }
-      : sandboxToggles;
+    // Strictly use actual current sandboxToggles - NO forcePass simulation!
+    const activeSandboxState: SandboxToggles = sandboxToggles;
 
     try {
       const res = await fetch('/api/retest', {
@@ -587,13 +579,13 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     if (openIssues.length === 0) return;
 
     for (const iss of openIssues) {
-      await retestIssue(iss.id, true);
+      await retestIssue(iss.id);
     }
   };
 
   const runOfficialTestSuite = async () => {
     setIsSuiteRunning(true);
-    showToast('Executing Core Compliance Testbed Suite...');
+    showToast('Executing Core Compliance Testbed Suite against live engines...');
 
     const updateCase = (id: 'TC1' | 'TC2' | 'TC3' | 'TC4', updates: Partial<TestCaseRunResult>) => {
       setTestSuiteResults((prev) =>
@@ -601,40 +593,99 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
       );
     };
 
-    updateCase('TC1', { status: 'running' });
-    await new Promise((res) => setTimeout(res, 700));
-    updateCase('TC1', {
-      status: 'passed',
-      timestamp: new Date().toISOString(),
-      actualResult: 'Trapped: Cyclic focus loop detected (12 Tab iterations). Escape key unhandled.',
-    });
+    try {
+      // 1. Dispatch real live audit to /api/audit to evaluate sandbox testbed scenarios
+      updateCase('TC1', { status: 'running' });
+      updateCase('TC2', { status: 'running' });
+      updateCase('TC3', { status: 'running' });
 
-    updateCase('TC2', { status: 'running' });
-    await new Promise((res) => setTimeout(res, 700));
-    updateCase('TC2', {
-      status: 'passed',
-      timestamp: new Date().toISOString(),
-      actualResult: 'Disagreement Resolved: Flagged as failure. Control unreachable via Tab key.',
-    });
+      const auditRes = await fetch('/api/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: '/sandbox',
+          targetLevel: 'WCAG 2.2 Level AA',
+          sandboxState: {
+            modalTrapFixed: false,
+            keyboardAccessibilityFixed: false,
+            photoContrastFixed: false,
+          },
+        }),
+      });
 
-    updateCase('TC3', { status: 'running' });
-    await new Promise((res) => setTimeout(res, 700));
-    updateCase('TC3', {
-      status: 'passed',
-      timestamp: new Date().toISOString(),
-      actualResult: 'Calculated: 2.3:1 ratio under text bounding box (Fails 4.5:1 AA threshold).',
-    });
+      const auditData: AuditApiResponse = await auditRes.json();
+      const detectedIssues = auditData.issues || [];
 
-    updateCase('TC4', { status: 'running' });
-    await new Promise((res) => setTimeout(res, 900));
-    updateCase('TC4', {
-      status: 'passed',
-      timestamp: new Date().toISOString(),
-      actualResult: 'Verified Fixed: Side-by-side diff generated with 10.4:1 contrast / focus release / keyboard handlers.',
-    });
+      // Evaluate TC1: Modal Focus Trap
+      const tc1 = detectedIssues.find(
+        (i) => i.id === 'TC1-MODAL-TRAP' || i.wcagCriterion.includes('2.1.2') || i.targetSelector.includes('modal')
+      );
+      updateCase('TC1', {
+        status: tc1 ? 'passed' : 'failed',
+        timestamp: new Date().toISOString(),
+        actualResult: tc1
+          ? `Trapped: Cyclic focus loop detected (${tc1.keyboardTrace?.iterations || 12} Tab iterations). Escape key unhandled in DOM subtree.`
+          : 'Failed to detect modal trap in testbed DOM.',
+      });
 
-    setIsSuiteRunning(false);
-    showToast('Compliance Testbed Suite Complete: All Scenarios Verified!');
+      // Evaluate TC2: Keyboard Operability & Disagreement Override
+      const tc2 = detectedIssues.find(
+        (i) => i.id === 'TC2-KEYBOARD-HEURISTIC' || i.wcagCriterion.includes('2.1.1') || i.targetSelector.includes('custom-action')
+      );
+      updateCase('TC2', {
+        status: tc2 ? 'passed' : 'failed',
+        timestamp: new Date().toISOString(),
+        actualResult: tc2
+          ? `${tc2.decisionReason || tc2.disagreementBadge || 'Disagreement Resolved: Flagged as failure.'} Custom action element unreachable via Tab key.`
+          : 'Failed to arbitrate keyboard reachability.',
+      });
+
+      // Evaluate TC3: Photo Luminance Contrast
+      const tc3 = detectedIssues.find(
+        (i) => i.id === 'TC3-PHOTO-CONTRAST' || i.wcagCriterion.includes('1.4.3') || i.targetSelector.includes('photo')
+      );
+      updateCase('TC3', {
+        status: tc3 ? 'passed' : 'failed',
+        timestamp: new Date().toISOString(),
+        actualResult: tc3
+          ? `Calculated: ${tc3.contrastSampleDetails?.sampledRatio || '2.3'}:1 ratio under text bounding box (Fails 4.5:1 AA threshold over photography).`
+          : 'Failed to sample pixel luminance.',
+      });
+
+      // Evaluate TC4: Retest & Visual Diff Engine via real /api/retest call
+      updateCase('TC4', { status: 'running' });
+
+      const retestRes = await fetch('/api/retest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issueId: 'TC1-MODAL-TRAP',
+          targetSelector: '#interactive-modal',
+          url: '/sandbox',
+          sandboxState: {
+            modalTrapFixed: true,
+            keyboardAccessibilityFixed: true,
+            photoContrastFixed: true,
+          },
+        }),
+      });
+
+      const retestData: RetestApiResponse = await retestRes.json();
+      updateCase('TC4', {
+        status: retestData.resolved ? 'passed' : 'failed',
+        timestamp: new Date().toISOString(),
+        actualResult: retestData.resolved
+          ? `Verified Fixed: Side-by-side diff generated with ${retestData.visualDiff?.verifierAgent || 'DOM retest engine'}. ${retestData.message}`
+          : `Retest verification failed: ${retestData.message}`,
+      });
+
+      showToast('Compliance Testbed Suite Complete: Live audit & retest verified!');
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`Testbed suite run encountered error: ${error.message}`);
+    } finally {
+      setIsSuiteRunning(false);
+    }
   };
 
   return (

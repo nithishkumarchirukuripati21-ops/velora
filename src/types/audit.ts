@@ -25,6 +25,7 @@ export interface AIRemediation {
   beforeCode: string;
   afterCode: string;
   language: string;
+  provider?: string;
 }
 
 export interface VisualDiffState {
@@ -139,6 +140,7 @@ export interface SettingsConfig {
   defaultLevel: WCAGLevel;
   keyboardDepth: number;
   aiModel: string;
+  geminiApiKey?: string;
 }
 
 export interface AgentLogMessage {

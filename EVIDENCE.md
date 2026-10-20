@@ -18,12 +18,12 @@ The modern web remains broadly inaccessible. According to WebAIM's analysis of t
   - **Context-dependent color contrast failures** over gradients, CSS transforms, and pseudo-elements.
 
 ### 1.2 How Velora Bridges the Gap
-**VELORA** is an autonomous accessibility auditor and remediation assistant that combines **automated rule-based DOM evaluation** with **real browser subagent exploration** and a **mandatory Human-in-the-Loop approval gate**.
+**VELORA** is an autonomous accessibility auditor and remediation assistant that combines **high-performance server-side Cheerio DOM evaluation** with **dynamic keyboard traversal simulation** and a **mandatory Human-in-the-Loop approval gate**.
 
 Instead of dumping hundreds of unverified warnings onto developers:
-1. Velora deploys an agent that simulates keyboard traversal (`Tab`, `Shift+Tab`, `Enter`, `Escape`), capturing focus paths and detecting traps.
+1. Velora deploys an agent that evaluates remote and testbed DOMs and simulates keyboard traversal (`Tab`, `Shift+Tab`, `Enter`, `Escape`), capturing focus paths and detecting traps.
 2. It captures **high-resolution visual evidence** highlighting barriers with red bounding boxes.
-3. It generates **executable before/after code patches** (HTML/CSS) tailored to the exact DOM selector.
+3. It generates **executable before/after code patches** (HTML/CSS) powered by Google Gemini (with deterministic rule templates as resilient fallback).
 4. It enforces an **Approval Gate**: issues cannot be committed until a human auditor reviews and approves them.
 5. It features an automated **Retest Loop**: once a developer applies a fix, the agent re-inspects the live DOM element to verify compliance, transitioning the issue to `VERIFIED FIXED` with visual diff evidence.
 
@@ -32,7 +32,7 @@ Instead of dumping hundreds of unverified warnings onto developers:
 |---|---|---|---|---|
 | **WCAG 1.4.3** | Contrast (Minimum) | **AA** | Perceivable | Mathematical relative luminance calculation (`(L1+0.05)/(L2+0.05)`). Threshold: $\ge 4.5:1$ (body), $\ge 3:1$ (large). |
 | **WCAG 1.4.6** | Contrast (Enhanced) | **AAA** | Perceivable | Strict mode evaluation. Threshold: $\ge 7.0:1$ (normal text), $\ge 4.5:1$ (large text). |
-| **WCAG 2.1.1** | Keyboard Operability | **A** | Operable | Headless browser Tab traversal. Detects elements unreachable via keyboard or trapped in DOM loops. |
+| **WCAG 2.1.1** | Keyboard Operability | **A** | Operable | Dynamic keyboard traversal simulation. Detects elements unreachable via keyboard or trapped in DOM loops. |
 | **WCAG 2.4.7** | Focus Visible | **AA** | Operable | Verifies computed `:focus-visible` styles on interactive elements (`a`, `button`, `input`). Flags `outline: none` suppression. |
 | **WCAG 4.1.2** | Name, Role, Value | **A** | Robust | Inspects accessibility tree for empty interactive controls, missing `aria-label`, or unannounced SVG buttons. |
 | **WCAG 2.4.3** | Focus Order | **A** | Operable | Sequentially logs tabindex progression across document landmarks. |
@@ -44,9 +44,9 @@ Instead of dumping hundreds of unverified warnings onto developers:
 Velora operates on a 4-phase autonomous pipeline:
 
 ```
-[Phase 1: Collect Details] ──▶ [Phase 2: Dynamic Planning] ──▶ [Phase 3: Browser Exploration] ──▶ [Phase 4: Human Approval Gate]
-   - URL & Standard               - Rule decomposition              - Playwright / Headless            - Review candidate bugs
-   - Viewport Config              - Tab sequence limit              - Bounding box capture             - Approve, Dismiss, Retest
+[Phase 1: Collect Details] ──▶ [Phase 2: Dynamic Planning] ──▶ [Phase 3: DOM & Traversal Scan] ──▶ [Phase 4: Human Approval Gate]
+   - URL & Standard               - Rule decomposition              - Server-Side Cheerio DOM          - Review candidate bugs
+   - Viewport Config              - Tab sequence limit              - Focus-Trap Simulator Trace       - Approve, Dismiss, Retest
 ```
 
 ### 2.1 Phase Breakdown
@@ -60,22 +60,22 @@ Velora operates on a 4-phase autonomous pipeline:
   ```json
   {
     "plan": [
-      "Static DOM tree scan against 48 Core Rules",
-      "Keyboard Tab traversal up to configured depth limit (e.g., 50 stops)",
+      "Static DOM tree scan against 48 Core Rules via Server-side Cheerio",
+      "Dynamic keyboard Tab traversal simulation up to configured depth limit",
       "Contrast extraction on top-level landmarks and call-to-action buttons",
       "Screen reader accessibility tree inspection for aria-label bindings"
     ]
   }
   ```
 
-#### Phase 3: Browser Exploration & Finding (Live Activity Stream)
-- The subagent opens a live headless browser session and executes sequential exploration:
-  - `[Agent] Launching browser session in headless mode (Viewport 1440x900)...`
+#### Phase 3: DOM Analysis & Traversal Simulation (Live Activity Stream)
+- The auditor engine executes server-side DOM parsing and sequential traversal simulation:
+  - `[Agent] Fetching live target DOM via high-speed HTTP parser...`
   - `[Agent] Running automated DOM scan across 48 accessibility rule sets...`
-  - `[Agent] Simulating keyboard Tab sequence (WCAG 2.1.1 Keyboard)...`
+  - `[Agent] Simulating keyboard Tab sequence (WCAG 2.1.1 Keyboard Operability)...`
   - `[Agent] Focus outline missing on navigation button (WCAG 2.4.7 Focus Visible)...`
   - `[Agent] Contrast ratio 2.85:1 below minimum 4.5:1 on hero CTA (WCAG 1.4.3 Contrast)...`
-  - `[Agent] Capturing high-resolution screenshots with bounding box highlights...`
+  - `[Agent] Generating high-resolution bounding box evidence previews...`
 
 #### Phase 4: Action & Human Approval Gate
 - **No issue is logged automatically without human consent.**
@@ -120,13 +120,31 @@ When a developer modifies the code and clicks **`[Retest Issue Now]`**:
                                     │ API Requests (POST)
 ┌───────────────────────────────────▼────────────────────────────────────┐
 │                    API BACKEND & EVALUATION ENGINES                    │
-│   ├── /api/audit (Executes DOM scans & returns structured issues)       │
-│   ├── /api/retest (Re-evaluates selectors & produces visual diffs)     │
+│   ├── Live Audit Engine: Server-side Cheerio DOM Parser (/api/audit)    │
+│   ├── Dynamic Keyboard & Traversal Simulator (Client/Testbed Harness)  │
+│   ├── AI Remediation Engine: Google Gemini LLM API (/api/remediate)    │
+│   ├── Retest Engine: Real-time DOM Differential Re-inspection          │
 │   └── src/lib/wcagEngine.ts (Mathematical luminance & contrast engine)  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 WCAG 2.1 Relative Luminance Algorithm
+### 3.2 Core Architectural Engines
+1. **Live Audit Engine (`/api/audit`):**
+   - High-performance server-side Cheerio DOM parser that inspects remote URLs and local sandbox markup with zero browser overhead.
+   - Extracts semantic elements, ARIA labels, image alts, headings hierarchy, and computed color styles.
+2. **Dynamic Keyboard & Traversal Simulator:**
+   - Client-side & testbed sequential focus traversal engine.
+   - Simulates `Tab` and `Shift+Tab` keystroke propagation, detects cyclic focus loops (e.g. unhandled Escape in modals), and tracks interactive reachability.
+3. **AI Remediation Engine (`/api/remediate`):**
+   - Calls Google Gemini LLM (`gemini-1.5-flash`) when `GEMINI_API_KEY` is configured in environment or `/settings`.
+   - Returns structured JSON containing plain-English explanations, before-snippets, and accessible production-ready code.
+   - Resiliently falls back to deterministic WCAG rule templates when no key is present.
+4. **Retest Engine (`/api/retest`):**
+   - Executes real-time DOM differential re-inspection without shortcuts or hardcoded passes.
+   - For remote websites: re-fetches live markup via Cheerio and verifies attribute remediation.
+   - For demo sandbox: evaluates physical toggle states and returns verified visual diffs only when compliance is confirmed.
+
+### 3.3 WCAG 2.1 Relative Luminance Algorithm
 Implemented in `src/lib/wcagEngine.ts`:
 
 $$\text{For } C \in \{R, G, B\}: \quad c = \frac{C}{255}$$

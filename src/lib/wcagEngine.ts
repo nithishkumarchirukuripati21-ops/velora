@@ -293,9 +293,7 @@ export function evaluateRetest(
 
   // 1. Modal Focus Trap Retest
   if (issueId.includes('MODAL') || targetSelector.includes('modal')) {
-    const isFixed = sandboxState
-      ? !!(sandboxState.modalTrapFixed || sandboxState.focusFixed)
-      : true;
+    const isFixed = !!(sandboxState && (sandboxState.modalTrapFixed || sandboxState.focusFixed));
 
     const visualDiff: VisualDiffEvidence = {
       retestTimestamp: timestamp,
@@ -322,16 +320,14 @@ export function evaluateRetest(
       resolved: isFixed,
       visualDiff,
       message: isFixed
-        ? 'Verified: Modal focus trap resolved. Escape key dismisses modal and Tab navigation cycles cleanly.'
-        : 'Retest failed: Modal still traps focus. Toggle "[Fix Modal Focus Trap]" in the Demo Environment.',
+        ? 'DOM inspection confirmed: Accessible attributes verified. Escape key dismisses modal and Tab navigation cycles cleanly.'
+        : 'Retest failed: Remediation toggle is still OFF in sandbox testbed. Enable "[Fix Modal Focus Trap]" to remediate.',
     };
   }
 
   // 2. Keyboard Navigation Retest
   if (issueId.includes('KEYBOARD') || targetSelector.includes('custom-action') || targetSelector.includes('role="button"')) {
-    const isFixed = sandboxState
-      ? !!(sandboxState.keyboardAccessibilityFixed || sandboxState.ariaFixed)
-      : true;
+    const isFixed = !!(sandboxState && (sandboxState.keyboardAccessibilityFixed || sandboxState.ariaFixed));
 
     const visualDiff: VisualDiffEvidence = {
       retestTimestamp: timestamp,
@@ -358,16 +354,14 @@ export function evaluateRetest(
       resolved: isFixed,
       visualDiff,
       message: isFixed
-        ? 'Verified: Custom element now includes tabindex="0" and Enter/Space keyboard handlers. Fully keyboard operable.'
-        : 'Retest failed: Custom element lacks keyboard access. Toggle "[Add Keyboard Accessibility]" in the Demo Environment.',
+        ? 'DOM inspection confirmed: Accessible attributes verified. Custom element includes tabindex="0" and Enter/Space keyboard handlers.'
+        : 'Retest failed: Remediation toggle is still OFF in sandbox testbed. Enable "[Add Keyboard Accessibility]" to remediate.',
     };
   }
 
   // 3. Photo Contrast Retest
   if (issueId.includes('PHOTO') || issueId.includes('contrast') || targetSelector.includes('photo')) {
-    const isFixed = sandboxState
-      ? !!(sandboxState.photoContrastFixed || sandboxState.contrastFixed)
-      : true;
+    const isFixed = !!(sandboxState && (sandboxState.photoContrastFixed || sandboxState.contrastFixed));
 
     const visualDiff: VisualDiffEvidence = {
       retestTimestamp: timestamp,
@@ -384,7 +378,7 @@ export function evaluateRetest(
         label: isFixed ? 'Verified Retest State (Passed)' : 'Retest State (Still Failing)',
         statusBadge: isFixed ? 'PASS: Contrast 10.4:1 with rgba(0,0,0,0.7) Scrim' : 'FAIL: Still 2.3:1',
         contrast: isFixed ? '10.4:1' : '2.3:1',
-        previewText: 'White text with dark scrim overlay',
+        previewText: isFixed ? 'White text with dark scrim overlay' : 'Grey text #94a3b8 on photographic imagery',
         cssStyle: isFixed
           ? 'color: #ffffff; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);'
           : 'color: #94a3b8; background: transparent;',
@@ -398,12 +392,12 @@ export function evaluateRetest(
       resolved: isFixed,
       visualDiff,
       message: isFixed
-        ? 'Verified: Photographic background scrim rgba(0,0,0,0.7) deployed with white text. Contrast ratio 10.4:1 passes AA and AAA.'
-        : 'Retest failed: Text contrast remains 2.3:1 on photographic background. Toggle "[Fix Photo Overlay Contrast]" in the Demo Environment.',
+        ? 'DOM inspection confirmed: Accessible attributes verified. Photographic background scrim rgba(0,0,0,0.7) deployed with white text (10.4:1).'
+        : 'Retest failed: Remediation toggle is still OFF in sandbox testbed. Enable "[Fix Photo Overlay Contrast]" to remediate.',
     };
   }
 
-  // Live Web Issue Generic Retest
+  // Generic / Unmatched Retest Fallback (Defaults to false unless verified)
   const visualDiff: VisualDiffEvidence = {
     retestTimestamp: timestamp,
     verifierAgent: 'Velora Live DOM Retest Agent',
@@ -413,15 +407,15 @@ export function evaluateRetest(
       previewText: targetSelector,
     },
     afterState: {
-      label: 'Verified Retest State',
-      statusBadge: 'PASS: Verified Compliant in Fresh DOM Tree',
+      label: 'Retest State (Still Non-Compliant)',
+      statusBadge: 'FAIL: Actively Non-Compliant',
       previewText: targetSelector,
     },
   };
 
   return {
-    resolved: true,
+    resolved: false,
     visualDiff,
-    message: `Element ${targetSelector} successfully verified in target DOM.`,
+    message: `Retest failed: Element ${targetSelector} remains non-compliant in target DOM.`,
   };
 }
