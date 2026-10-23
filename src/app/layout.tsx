@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="light" suppressHydrationWarning>
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -39,7 +39,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="bg-slate-50 text-slate-900 dark:bg-[#0b0f19] dark:text-slate-100 min-h-screen transition-colors duration-200 flex flex-col font-sans">
+      <body className="min-h-full bg-slate-50 text-slate-900 dark:bg-[#0b0f19] dark:text-slate-100 min-h-screen transition-colors duration-200 flex flex-col font-sans">
         <AuditProvider>{children}</AuditProvider>
       </body>
     </html>

@@ -20,6 +20,7 @@ import {
   Check,
   Activity,
   Layers,
+  Trash2,
 } from 'lucide-react';
 import { GeminiKeyStatus } from '@/lib/geminiKeyManager';
 
@@ -35,7 +36,7 @@ interface NetworkTelemetry {
 }
 
 export default function SettingsPage() {
-  const { settings, updateSettings, showToast } = useAudit();
+  const { settings, updateSettings, showToast, resetAllAuditData } = useAudit();
 
   const [defaultLevel, setDefaultLevel] = useState<WCAGLevel>(settings.defaultLevel);
   const [keyboardDepth, setKeyboardDepth] = useState<number>(settings.keyboardDepth);
@@ -622,6 +623,46 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Section 5: Local Storage Persistence & Audit History Reset */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-rose-200/80 dark:border-rose-950/60 p-6 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0 border border-rose-200/60 dark:border-rose-800">
+                <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Audit History & LocalStorage Persistence
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Manage persistent local state, cached website audits, and saved compliance findings.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+              <div>
+                <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 font-sans">
+                  Wipe Local Audit Database
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Permanently clear all saved websites, approved issues, and multi-audit targets from localStorage. Returns the platform to a clean 0 state.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to permanently reset all audit data and return to a clean state? This cannot be undone.')) {
+                    resetAllAuditData();
+                  }
+                }}
+                className="bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>🗑️ Reset All Audit Data</span>
+              </button>
+            </div>
           </div>
 
           {/* Save Action Row */}

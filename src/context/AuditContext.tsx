@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useRef, useMemo, useEffect } from 'react';
 import {
   AuditMetrics,
   AuditRecord,
@@ -88,7 +88,9 @@ interface AuditContextType {
   liveLogs: AgentLogMessage[];
   activeAuditRecord: AuditRecord | null;
   startAudit: (overrideUrl?: string, overrideLevel?: WCAGLevel) => Promise<string>;
+  stopAudit: () => void;
   cancelAudit: () => void;
+  resetAllAuditData: () => void;
   approveIssue: (issueId: string) => void;
   approveAllPendingIssues: (targetUrl?: string) => void;
   dismissIssue: (issueId: string) => void;
@@ -138,8 +140,39 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
   const [testSuiteResults, setTestSuiteResults] = useState<TestCaseRunResult[]>(INITIAL_TESTBED_RESULTS);
   const [isSuiteRunning, setIsSuiteRunning] = useState<boolean>(false);
   const [selectedTargetUrl, setSelectedTargetUrl] = useState<string>('');
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 1. Load from localStorage ONLY ONCE on initial mount
+  useEffect(() => {
+    try {
+      const savedAudits = localStorage.getItem('velora_audits_v2');
+      const savedIssues = localStorage.getItem('velora_issues_v2');
+      const savedTarget = localStorage.getItem('velora_active_target_v2');
+
+      if (savedAudits) setAudits(JSON.parse(savedAudits));
+      if (savedIssues) setIssues(JSON.parse(savedIssues));
+      if (savedTarget) setSelectedTargetUrl(savedTarget);
+    } catch (err) {
+      console.error('[AuditContext] Error reading localStorage:', err);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []); // STRICTLY EMPTY DEPENDENCY ARRAY - DO NOT ADD STATE HERE
+
+  // 2. Save to localStorage ONLY AFTER hydration is complete
+  useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      localStorage.setItem('velora_audits_v2', JSON.stringify(audits));
+      localStorage.setItem('velora_issues_v2', JSON.stringify(issues));
+      localStorage.setItem('velora_active_target_v2', selectedTargetUrl || '');
+    } catch (err) {
+      console.error('[AuditContext] Error writing localStorage:', err);
+    }
+  }, [audits, issues, selectedTargetUrl, isHydrated]);
 
   const toggleSandboxFix = (key: keyof SandboxToggles) => {
     setSandboxToggles((prev) => {
@@ -222,10 +255,37 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     setLiveLogs((prev) => [...prev, newLog]);
   };
 
-  const cancelAudit = () => {
+  const stopAudit = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setIsAuditing(false);
-    setCurrentStep(0);
-    showToast('Audit paused.');
+    setActiveAuditRecord((prev) =>
+      prev ? { ...prev, status: 'stopped' } : null
+    );
+    addLog(currentStep || 3, '[Agent] ⏹ Audit cancelled by user. In-flight tasks aborted.', 'warn');
+    console.log('[Agent] ⏹ Audit cancelled by user. In-flight tasks aborted.');
+    showToast('Audit stopped by operator');
+  };
+
+  const cancelAudit = () => {
+    stopAudit();
+  };
+
+  const resetAllAuditData = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('velora_audits_v2');
+      localStorage.removeItem('velora_issues_v2');
+      localStorage.removeItem('velora_active_target_v2');
+    }
+    setAudits([]);
+    setIssues([]);
+    setReports([]);
+    setActiveAuditRecord(null);
+    setSelectedTargetUrl('');
+    setUrl('');
+    showToast('All audit history, targets, and issues have been reset.');
   };
 
   const startAudit = async (overrideUrl?: string, overrideLevel?: WCAGLevel): Promise<string> => {
@@ -242,6 +302,9 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     const isLiveWeb = !isDemo && /^https?:\/\//i.test(auditUrl);
 
     setSelectedTargetUrl(auditUrl);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const auditId = 'audit_' + Math.random().toString(36).substring(2, 9);
     const newRecord: AuditRecord = {
@@ -266,8 +329,17 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     addLog(1, `Target configured: ${auditUrl} [Standard: ${auditLevel}]`, 'info');
     addLog(1, `Initializing Velora AI Auditor runtime using ${settings.aiModel}...`, 'info');
 
+    if (controller.signal.aborted) {
+      setIsAuditing(false);
+      return auditId;
+    }
+
     // 2. Plan Next Steps
     await new Promise((res) => setTimeout(res, 600));
+    if (controller.signal.aborted) {
+      setIsAuditing(false);
+      return auditId;
+    }
     setCurrentStep(2);
     if (isLiveWeb) {
       addLog(2, `Decomposing audit for live web page: Fetching live HTML, parsing DOM tree, running automated rules scan`, 'action');
@@ -279,6 +351,10 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
 
     // 3. Find Information (Live Activity Stream)
     await new Promise((res) => setTimeout(res, 700));
+    if (controller.signal.aborted) {
+      setIsAuditing(false);
+      return auditId;
+    }
     setCurrentStep(3);
     addLog(3, `[Agent] Launching browser inspection session (Viewport 1440x900)...`, 'info');
 
@@ -303,6 +379,7 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch('/api/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           url: auditUrl,
           targetLevel: auditLevel,
@@ -312,8 +389,17 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         }),
       });
 
+      if (controller.signal.aborted) {
+        setIsAuditing(false);
+        return auditId;
+      }
+
       if (res.ok) {
         const data: AuditApiResponse = await res.json();
+        if (controller.signal.aborted) {
+          setIsAuditing(false);
+          return auditId;
+        }
         evalResult = {
           issues: data.issues || [],
           score: data.score ?? 85,
@@ -328,8 +414,16 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         if (data.logs && data.logs.length > 0) {
           // Stream Phase 3 logs
           for (const l of data.logs) {
+            if (controller.signal.aborted) {
+              setIsAuditing(false);
+              return auditId;
+            }
             if (l.phase === 3) {
               await new Promise((r) => setTimeout(r, 100));
+              if (controller.signal.aborted) {
+                setIsAuditing(false);
+                return auditId;
+              }
               addLog(3, l.text, l.type);
             }
           }
@@ -337,11 +431,23 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
           // Advance to Phase 4: Synthesizing Issues
           setCurrentStep(4);
           await new Promise((r) => setTimeout(r, 150));
+          if (controller.signal.aborted) {
+            setIsAuditing(false);
+            return auditId;
+          }
 
           // Stream Phase 4 Gemini synthesis logs
           for (const l of data.logs) {
+            if (controller.signal.aborted) {
+              setIsAuditing(false);
+              return auditId;
+            }
             if (l.phase === 4) {
               await new Promise((r) => setTimeout(r, 200));
+              if (controller.signal.aborted) {
+                setIsAuditing(false);
+                return auditId;
+              }
               addLog(4, l.text, l.type);
             }
           }
@@ -356,13 +462,27 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         setIsAuditing(false);
         return auditId;
       }
-    } catch {
+    } catch (err: unknown) {
+      const error = err as Error;
+      if (error?.name === 'AbortError' || controller.signal.aborted) {
+        console.log('[Agent] ⏹ Audit cancelled by user. In-flight tasks aborted.');
+        addLog(3, '[Agent] ⏹ Audit cancelled by user. In-flight tasks aborted.', 'warn');
+        setIsAuditing(false);
+        setActiveAuditRecord((prev) => (prev ? { ...prev, status: 'stopped' } : null));
+        showToast('Audit stopped by operator');
+        return auditId;
+      }
       if (isLiveWeb) {
         addLog(3, `Error connecting to ${auditUrl}. Ensure host is accessible.`, 'warn');
         showToast(`Unable to reach ${auditUrl}`);
         setIsAuditing(false);
         return auditId;
       }
+    }
+
+    if (controller.signal.aborted) {
+      setIsAuditing(false);
+      return auditId;
     }
 
     // Finalize Step 4 (Human Approval Gate)
@@ -456,6 +576,11 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
     setActiveAuditRecord(completedRecord);
 
     setAudits((prev) => [completedRecord, ...prev.filter((rec) => rec.id !== auditId)]);
+
+    if (abortControllerRef.current === controller) {
+      abortControllerRef.current = null;
+    }
+    setIsAuditing(false);
 
     showToast(`Audit for ${auditUrl} complete. ${evalResult.issues.length} issues awaiting human review.`);
     return auditId;
@@ -759,7 +884,9 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         liveLogs,
         activeAuditRecord,
         startAudit,
+        stopAudit,
         cancelAudit,
+        resetAllAuditData,
         approveIssue,
         approveAllPendingIssues,
         dismissIssue,

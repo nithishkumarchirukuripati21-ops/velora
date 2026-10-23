@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Globe, Sliders, ChevronDown, Play, Loader2, ArrowRight } from 'lucide-react';
+import { Sparkles, Globe, Sliders, ChevronDown, Play, Loader2, ArrowRight, Square } from 'lucide-react';
 import { useAudit } from '@/context/AuditContext';
 import { WCAGLevel } from '@/types/audit';
 
@@ -14,6 +14,7 @@ export function AuditActionBar() {
     targetLevel,
     setTargetLevel,
     startAudit,
+    stopAudit,
     isAuditing,
     urlInputRef,
   } = useAudit();
@@ -114,7 +115,7 @@ export function AuditActionBar() {
             value={mode === 'demo' ? '/sandbox (Pre-configured Testbed)' : url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://example.com or any public website"
-            disabled={isAuditing || mode === 'demo'}
+            disabled={isAuditing ? false : mode === 'demo'}
             required
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-slate-800 dark:hover:bg-slate-800 dark:focus:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100/80 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none transition-all disabled:bg-slate-100 dark:disabled:bg-slate-800/50 disabled:text-slate-600 dark:disabled:text-slate-400 font-mono"
           />
@@ -140,23 +141,24 @@ export function AuditActionBar() {
           </div>
         </div>
 
-        {/* Start Audit Button */}
-        <button
-          type="submit"
-          disabled={isAuditing}
-          className="shrink-0 bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 active:scale-[0.98] text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm shadow-cyan-500/20 transition-all disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
-        >
-          {isAuditing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Auditing Target...</span>
-            </>
-          ) : (
-            <>
-              <span>{mode === 'demo' ? 'Audit Testbed →' : 'Run Autonomous Audit →'}</span>
-            </>
-          )}
-        </button>
+        {/* Start / Stop Audit Button */}
+        {isAuditing ? (
+          <button
+            type="button"
+            onClick={stopAudit}
+            className="shrink-0 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl px-4 py-2 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer text-xs sm:text-sm"
+          >
+            <Square className="w-4 h-4 fill-current" />
+            <span>⏹ Stop Audit</span>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="shrink-0 bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 active:scale-[0.98] text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm shadow-cyan-500/20 transition-all cursor-pointer"
+          >
+            <span>{mode === 'demo' ? 'Audit Testbed →' : 'Run Autonomous Audit →'}</span>
+          </button>
+        )}
       </form>
 
       {/* Quick benchmark chips beneath input */}

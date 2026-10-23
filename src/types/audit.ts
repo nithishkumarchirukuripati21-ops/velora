@@ -4,7 +4,7 @@ export type WCAGLevel =
   | 'WCAG 2.2 Level AA'
   | 'WCAG 2.2 Level AAA';
 
-export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
 
 export type IssueSeverity = 'critical' | 'serious' | 'moderate' | 'minor';
 

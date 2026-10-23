@@ -24,6 +24,8 @@ import {
   DownloadCloud,
   FileCheck2,
   Cpu,
+  Square,
+  Plus,
 } from 'lucide-react';
 import { EnterpriseTestbedPanel } from '@/components/dashboard/EnterpriseTestbedPanel';
 
@@ -42,6 +44,9 @@ export default function NewAuditPage() {
     issues,
     setSelectedTargetUrl,
     activeAuditRecord,
+    stopAudit,
+    urlInputRef,
+    focusUrlInput,
   } = useAudit();
 
   const [targetUrl, setTargetUrl] = useState(url || '');
@@ -167,8 +172,25 @@ export default function NewAuditPage() {
               </p>
             </div>
 
-            {/* Quick-Switch Segmented Pill Buttons */}
-            <div className="flex items-center gap-2">
+            {/* Quick-Switch Segmented Pill Buttons & Audit Another Site */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUrl('');
+                  setTargetUrl('');
+                  setInputUrl('');
+                  setAuditMode('live');
+                  focusUrlInput();
+                  const el = document.getElementById('audit-target-url') as HTMLInputElement | null;
+                  el?.focus();
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>+ Audit Another Site</span>
+              </button>
+
               <div className="flex items-center bg-slate-100/90 dark:bg-slate-800 p-1 rounded-2xl text-xs font-semibold border border-slate-200/60 dark:border-slate-700 shadow-2xs">
                 <button
                   type="button"
@@ -207,9 +229,19 @@ export default function NewAuditPage() {
               </div>
 
               {isAuditing && (
-                <div className="flex items-center gap-2 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200/80 dark:border-cyan-800 px-3.5 py-1.5 rounded-full text-cyan-800 dark:text-cyan-300 text-xs font-bold animate-pulse shadow-2xs">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-600 dark:text-cyan-400" />
-                  <span>Stage {currentStep} of 4</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200/80 dark:border-cyan-800 px-3.5 py-1.5 rounded-full text-cyan-800 dark:text-cyan-300 text-xs font-bold animate-pulse shadow-2xs">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-600 dark:text-cyan-400" />
+                    <span>Stage {currentStep} of 4</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stopAudit}
+                    className="bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl px-3 py-1.5 flex items-center gap-1.5 shadow-sm transition-all text-xs cursor-pointer"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>⏹ Stop</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -220,6 +252,7 @@ export default function NewAuditPage() {
             <div className="flex flex-col sm:flex-row gap-3 items-center w-full">
               <input
                 id="audit-target-url"
+                ref={urlInputRef}
                 type="url"
                 value={targetUrl}
                 onChange={(e) => {
@@ -249,14 +282,35 @@ export default function NewAuditPage() {
                 <option value="WCAG22AA">WCAG 2.2 Level AA</option>
                 <option value="WCAG21AA">WCAG 2.1 Level AA</option>
               </select>
-              <button
-                type="button"
-                onClick={handleStartAudit}
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm transition-colors shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
-              >
-                Start Live Audit →
-              </button>
+              {isAuditing ? (
+                <button
+                  type="button"
+                  onClick={stopAudit}
+                  className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl px-4 py-2 flex items-center justify-center gap-2 shadow-sm transition-all whitespace-nowrap cursor-pointer text-sm"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                  <span>⏹ Stop Audit</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartAudit}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm transition-colors shadow-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+                >
+                  Start Live Audit →
+                </button>
+              )}
             </div>
+
+            {activeAuditRecord?.status === 'stopped' && (
+              <div className="mt-3 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl flex items-center justify-between text-xs text-rose-800 dark:text-rose-200 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 font-medium">
+                  <Square className="w-3.5 h-3.5 text-rose-600 fill-current" />
+                  <span>Audit stopped by operator. URL input field is ready for editing or new audit.</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold bg-rose-100 dark:bg-rose-900/60 px-2 py-0.5 rounded">Stopped</span>
+              </div>
+            )}
           </div>
 
           {/* Quick Benchmark Chips */}
