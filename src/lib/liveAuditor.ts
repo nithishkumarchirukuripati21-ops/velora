@@ -1,5 +1,10 @@
 import * as cheerio from 'cheerio';
-import { Issue, AgentLogMessage, WCAGLevel } from '@/types/audit';
+import crypto from 'crypto';
+import dns from 'dns';
+import { promisify } from 'util';
+import { Issue, AgentLogMessage, WCAGLevel, CategoryBreakdown } from '@/types/audit';
+
+const lookup = promisify(dns.lookup);
 
 export interface LiveAuditResult {
   url: string;
@@ -11,11 +16,7 @@ export interface LiveAuditResult {
   passedRulesCount: number;
   issues: Issue[];
   logs: AgentLogMessage[];
-  breakdown: {
-    colorContrast: number;
-    keyboardOperability: number;
-    ariaSemantics: number;
-  };
+  breakdown: CategoryBreakdown;
   domStats: {
     totalNodes: number;
     headings: { h1: number; h2: number; h3: number };
@@ -25,98 +26,60 @@ export interface LiveAuditResult {
 }
 
 /**
- * Strict URL validator to enforce SSRF protection.
- * Rejects private RFC 1918 ranges, loopback, cloud metadata, and non-http(s) protocols.
+ * Generates a mathematically deterministic 64-character SHA-256 evidence hash
  */
-export function isPermittedUrl(rawUrl: string): { valid: boolean; reason?: string } {
-  const ssrfError =
-    'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).';
+export function generateEvidenceHash(url: string, selector: string, snippet: string, rule: string): string {
+  const payload = `${url}::${selector}::${snippet}::${rule}`;
+  return 'sha256:' + crypto.createHash('sha256').update(payload).digest('hex');
+}
 
-  let parsed: URL;
+/**
+ * Hardened SSRF Target Validator with DNS resolution and private network blocking.
+ */
+export async function validatePublicTarget(rawUrl: string): Promise<{ valid: boolean; error?: string; parsedUrl?: URL }> {
   try {
-    const urlString = rawUrl.trim();
+    let urlString = rawUrl.trim();
     if (!urlString) {
-      return { valid: false, reason: 'URL cannot be empty.' };
+      return { valid: false, error: 'URL cannot be empty.' };
     }
-    parsed = new URL(urlString.includes('://') ? urlString : `https://${urlString}`);
+    if (!/^https?:\/\//i.test(urlString)) {
+      urlString = 'https://' + urlString;
+    }
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Invalid protocol: Only HTTP and HTTPS are permitted.' };
+    }
+
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
+      return { valid: false, error: 'Security Restriction: Requests to localhost or loopback addresses are prohibited.' };
+    }
+
+    const { address } = await lookup(hostname);
+    if (
+      address.startsWith('10.') ||
+      address.startsWith('127.') ||
+      address.startsWith('192.168.') ||
+      address.startsWith('169.254.') ||
+      address === '::1' ||
+      address === '0.0.0.0' ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(address)
+    ) {
+      return { valid: false, error: 'Security Restriction: Destination resolves to a restricted private or link-local IP address (SSRF prevention).' };
+    }
+
+    return { valid: true, parsedUrl: parsed };
   } catch {
-    return { valid: false, reason: 'Invalid URL format.' };
+    return { valid: false, error: 'DNS Resolution Failure: Unable to resolve hostname.' };
   }
+}
 
-  // 1. Protocol must strictly be http: or https:
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return { valid: false, reason: 'Protocol must strictly be http: or https:.' };
-  }
-
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-
-  // 2. Reject localhost and known loopback hostnames
-  if (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname === '0.0.0.0' ||
-    hostname === '::1' ||
-    hostname === '::'
-  ) {
-    return { valid: false, reason: ssrfError };
-  }
-
-  // Reject cloud metadata hostnames
-  if (
-    hostname === 'metadata.google.internal' ||
-    hostname === 'instance-data' ||
-    hostname.endsWith('.internal')
-  ) {
-    return { valid: false, reason: ssrfError };
-  }
-
-  // 3. Check IPv4 addresses (RFC 1918, loopback, link-local, cloud metadata)
-  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-  const ipMatch = hostname.match(ipv4Regex);
-
-  if (ipMatch) {
-    const [_, o1, o2, o3, o4] = ipMatch.map(Number);
-
-    if (o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255) {
-      return { valid: false, reason: 'Invalid IP address octet.' };
-    }
-
-    // Loopback: 127.0.0.0/8 and 0.0.0.0/8
-    if (o1 === 127 || o1 === 0) {
-      return { valid: false, reason: ssrfError };
-    }
-
-    // RFC 1918 Private: 10.0.0.0/8
-    if (o1 === 10) {
-      return { valid: false, reason: ssrfError };
-    }
-
-    // RFC 1918 Private: 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
-    if (o1 === 172 && o2 >= 16 && o2 <= 31) {
-      return { valid: false, reason: ssrfError };
-    }
-
-    // RFC 1918 Private: 192.168.0.0/16
-    if (o1 === 192 && o2 === 168) {
-      return { valid: false, reason: ssrfError };
-    }
-
-    // Link-local & Cloud Metadata: 169.254.0.0/16 (includes 169.254.169.254)
-    if (o1 === 169 && o2 === 254) {
-      return { valid: false, reason: ssrfError };
-    }
-  }
-
-  // Check IPv6 private / link-local / loopback
-  if (
-    hostname.startsWith('fe80:') ||
-    hostname.startsWith('fc') ||
-    hostname.startsWith('fd')
-  ) {
-    return { valid: false, reason: ssrfError };
-  }
-
-  return { valid: true };
+/**
+ * Backward compatibility wrapper
+ */
+export async function isPermittedUrl(rawUrl: string): Promise<{ valid: boolean; reason?: string }> {
+  const result = await validatePublicTarget(rawUrl);
+  return { valid: result.valid, reason: result.error };
 }
 
 export type LiveAuditOutcome =
@@ -157,7 +120,7 @@ export async function auditLiveWebsite(
   };
 
   // SSRF Validation Gate
-  const urlCheck = isPermittedUrl(targetUrl);
+  const urlCheck = await isPermittedUrl(targetUrl);
   if (!urlCheck.valid) {
     const errorMsg = urlCheck.reason || 'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).';
     addLog(1, `[Security Block] ${errorMsg}`, 'warn');
@@ -187,24 +150,14 @@ export async function auditLiveWebsite(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
-    let res = await fetch(targetUrl, {
+    const res = await fetch(targetUrl, {
       headers: {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
       },
       signal: controller.signal,
+      redirect: 'error',
     });
-
-    if (res.status >= 400) {
-      try {
-        const retryRes = await fetch(targetUrl, { signal: controller.signal });
-        if (retryRes.status < 400) {
-          res = retryRes;
-        }
-      } catch {
-        // keep res
-      }
-    }
 
     clearTimeout(timeout);
     statusCode = res.status;
@@ -257,22 +210,12 @@ export async function auditLiveWebsite(
   const issues: Issue[] = [];
   let passedRulesCount = 0; // Calculated from actual checks evaluated against the DOM
 
-  // 1. WCAG 1.1.1: Images Missing Alt Attributes
-  const brokenImages = $('img:not([alt]), img[alt=""]');
+  // 1. WCAG 1.1.1: Images Missing Alt Attributes (alt="" is valid decorative markup under WCAG 1.1.1)
+  const brokenImages = $('img:not([alt])');
   let missingAltCount = 0;
   const seenSelectors = new Set<string>();
 
   brokenImages.each((idx, el) => {
-    const alt = $(el).attr('alt');
-    const role = $(el).attr('role');
-    const isAltUndefined = typeof alt === 'undefined';
-    const isInsideInteractive = $(el).closest('a[href], button').length > 0;
-
-    // role="presentation" or role="none" is only valid if outside interactive controls
-    if (!isAltUndefined && (role === 'presentation' || role === 'none') && !isInsideInteractive) {
-      return;
-    }
-
     missingAltCount++;
     if (issues.filter((i) => i.wcagCriterion.includes('1.1.1')).length < 8) {
       const src = $(el).attr('src') || $(el).attr('data-src') || '';
@@ -313,16 +256,12 @@ export async function auditLiveWebsite(
         severity: 'critical',
         status: 'pending_approval',
         targetSelector: selector,
-        decisionReason: isAltUndefined
-          ? `Decision Rule: <img> element lacks 'alt' attribute (${selector}). Screen readers cannot perceive graphic; flagged as Level A violation.`
-          : `Decision Rule: <img> element has empty alt="" in essential/interactive context (${selector}); flagged as Level A violation.`,
-        description: isAltUndefined
-          ? `The image element lacks an 'alt' attribute (${selector}). Screen readers cannot convey its purpose or content.`
-          : `The image element has an empty alt="" attribute but conveys essential information or link context (${selector}).`,
+        decisionReason: `Decision Rule: <img> element lacks 'alt' attribute (${selector}). Screen readers cannot perceive graphic; flagged as Level A violation.`,
+        description: `The image element lacks an 'alt' attribute (${selector}). Screen readers cannot convey its purpose or content.`,
         impact: 'Screen reader users cannot perceive or understand the content conveyed by this graphical element.',
         retrievalTime: isoNow,
         createdAt: 'Just now',
-        cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+        cryptoHash: generateEvidenceHash(targetUrl, selector, snippet, 'WCAG 1.1.1 Non-text Content - Level A'),
         visualEvidence: {
           elementDescription: `Image element on ${domain}`,
           simulatedHtmlPreview: snippet,
@@ -330,11 +269,9 @@ export async function auditLiveWebsite(
         },
         aiRemediation: {
           explanation:
-            'Add an informative alt attribute describing the image content. For non-interactive decorative icons, specify role="presentation".',
+            'Add an informative alt attribute describing the image content. For non-interactive decorative icons, specify alt="" or role="presentation".',
           beforeCode: snippet,
-          afterCode: isAltUndefined
-            ? snippet.replace(/<img/i, '<img alt="Descriptive label of image"')
-            : snippet.replace(/alt=""/i, 'alt="Descriptive label of image"'),
+          afterCode: snippet.replace(/<img/i, '<img alt="Descriptive label of image"'),
           language: 'html',
         },
       });
@@ -400,7 +337,7 @@ export async function auditLiveWebsite(
           impact: 'Assistive technology users cannot determine what input or format is expected in this control.',
           retrievalTime: isoNow,
           createdAt: 'Just now',
-          cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+          cryptoHash: generateEvidenceHash(targetUrl, selector, snippet, 'WCAG 1.3.1 Info and Relationships & 4.1.2 Name, Role, Value - Level A'),
           visualEvidence: {
             elementDescription: `Unlabeled ${type} control on ${domain}`,
             simulatedHtmlPreview: snippet,
@@ -483,7 +420,7 @@ export async function auditLiveWebsite(
           impact: 'Keyboard and screen reader users cannot discern what clicking this control will do.',
           retrievalTime: isoNow,
           createdAt: 'Just now',
-          cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+          cryptoHash: generateEvidenceHash(targetUrl, selector, snippet, 'WCAG 4.1.2 Name, Role, Value - Level A'),
           visualEvidence: {
             elementDescription: `Unlabeled ${tag} control on ${domain}`,
             simulatedHtmlPreview: snippet,
@@ -526,7 +463,7 @@ export async function auditLiveWebsite(
       impact: 'Screen readers may pronounce content using an incorrect speech synthesis voice or dialect.',
       retrievalTime: isoNow,
       createdAt: 'Just now',
-      cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+      cryptoHash: generateEvidenceHash(targetUrl, 'html', '<html>', 'WCAG 3.1.1 Language of Page - Level A'),
       visualEvidence: {
         elementDescription: 'Root HTML document tag',
         simulatedHtmlPreview: '<html>',
@@ -565,7 +502,7 @@ export async function auditLiveWebsite(
       impact: 'Users with cognitive impairments and screen reader users cannot quickly identify the current document context.',
       retrievalTime: isoNow,
       createdAt: 'Just now',
-      cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+      cryptoHash: generateEvidenceHash(targetUrl, 'head title', '<head></head>', 'WCAG 2.4.2 Page Titled - Level A'),
       visualEvidence: {
         elementDescription: 'HTML Head tag title',
         simulatedHtmlPreview: '<head></head>',
@@ -583,7 +520,7 @@ export async function auditLiveWebsite(
     passedRulesCount += 2;
   }
 
-  // 6. WCAG 1.3.1: H1 Heading Check
+  // 6. WCAG 1.3.1: H1 Heading Check (Best Practice Advisory)
   if (h1Count === 0) {
     issues.push({
       id: 'REAL-H1-MISSING',
@@ -591,18 +528,19 @@ export async function auditLiveWebsite(
       url: targetUrl,
       namedSource: `Live Website DOM (${domain})`,
       destinationLedger: 'Project Issue Ledger',
-      title: 'Document Lacks Primary <h1> Landmark Heading (WCAG 1.3.1)',
+      title: 'Document Lacks Primary <h1> Landmark Heading (Best Practice Advisory)',
       wcagCriterion: 'WCAG 1.3.1 Info and Relationships - Level A',
       ruleLevel: 'A',
       severity: 'moderate',
+      issueType: 'Best Practice Advisory (WCAG 1.3.1 Structure)',
       status: 'pending_approval',
       targetSelector: 'main, body',
-      decisionReason: `Decision Rule: Page DOM tree missing primary <h1> landmark; violates Info and Relationships structure guidelines.`,
+      decisionReason: `Decision Rule: Page DOM tree missing primary <h1> landmark; classified as Type: Best Practice Advisory (WCAG 1.3.1 Structure) rather than critical WCAG failure.`,
       description: `The document does not contain an <h1> heading to define the main topic or purpose of the page.`,
       impact: 'Screen reader users navigating by heading landmarks cannot find the primary topic of the page.',
       retrievalTime: isoNow,
       createdAt: 'Just now',
-      cryptoHash: `sha256:${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+      cryptoHash: generateEvidenceHash(targetUrl, 'main, body', '<main><!-- No h1 found --></main>', 'WCAG 1.3.1 Info and Relationships - Level A'),
       visualEvidence: {
         elementDescription: 'Heading hierarchy inspection',
         simulatedHtmlPreview: '<main><!-- No h1 found --></main>',
@@ -621,8 +559,45 @@ export async function auditLiveWebsite(
 
   // Additional Real DOM Conformance Checks
   const viewportMeta = $('meta[name="viewport"]').attr('content') || '';
-  if (!viewportMeta.includes('user-scalable=no') && !viewportMeta.includes('maximum-scale=1.0')) {
+  const isLevelA = targetLevel === 'WCAG 2.1 Level A';
+  const isLevelAAA = targetLevel.includes('AAA');
+  const allowsResize = !viewportMeta.includes('user-scalable=no') && !viewportMeta.includes('maximum-scale=1.0');
+
+  if (allowsResize) {
     passedRulesCount += 1; // WCAG 1.4.4 Resize text
+  } else if (!isLevelA) {
+    // Under Level AA and AAA, blocking pinch-to-zoom is a Level AA failure
+    issues.push({
+      id: 'REAL-VIEWPORT-ZOOM',
+      auditId: 'live-web',
+      url: targetUrl,
+      namedSource: `Live Website DOM (${domain})`,
+      destinationLedger: 'Project Issue Ledger',
+      title: 'Viewport Meta Tag Disables User Pinch-to-Zoom (WCAG 1.4.4 Level AA)',
+      wcagCriterion: 'WCAG 1.4.4 Resize Text - Level AA',
+      ruleLevel: 'AA',
+      severity: 'serious',
+      status: 'pending_approval',
+      targetSelector: 'meta[name="viewport"]',
+      decisionReason: `Decision Rule: Viewport meta tag contains user-scalable=no or maximum-scale=1.0, preventing users with low vision from resizing content up to 200%. Flagged as Level AA failure.`,
+      description: `The viewport configuration blocks user zoom capabilities. Assistive magnification and browser zoom cannot enlarge text to 200%.`,
+      impact: 'Partially sighted users cannot enlarge interface text or imagery on mobile viewports.',
+      retrievalTime: isoNow,
+      createdAt: 'Just now',
+      cryptoHash: generateEvidenceHash(targetUrl, 'meta[name="viewport"]', viewportMeta, 'WCAG 1.4.4 Resize Text - Level AA'),
+      visualEvidence: {
+        elementDescription: 'HTML Viewport Meta Configuration',
+        simulatedHtmlPreview: `<meta name="viewport" content="${viewportMeta}">`,
+        boundingHighlight: 'border-2 border-rose-500 ring-4 ring-rose-500/20',
+      },
+      aiRemediation: {
+        explanation: 'Remove user-scalable=no and allow viewport scaling up to at least 2.0 (200%).',
+        beforeCode: `<meta name="viewport" content="${viewportMeta}">`,
+        afterCode: '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        language: 'html',
+      },
+    });
+    addLog(3, `[Agent] Detected viewport zoom restriction: user-scalable=no (WCAG 1.4.4 Level AA)`, 'warn');
   }
 
   if ($('main, [role="main"]').length > 0) {
@@ -641,18 +616,36 @@ export async function auditLiveWebsite(
     passedRulesCount += 1; // WCAG 1.3.1 Landmark structure (Footer)
   }
 
-  // Calculate score
-  let score = 100;
-  for (const iss of issues) {
-    if (iss.severity === 'critical') score -= 12;
-    else if (iss.severity === 'serious') score -= 8;
-    else score -= 4;
-  }
-  score = Math.max(38, Math.min(100, score));
+  // Filter issues strictly by selected targetLevel (Level A, Level AA, Level AAA)
+  const filteredIssues = issues.filter((issue) => {
+    if (isLevelA) return issue.ruleLevel === 'A';
+    if (isLevelAAA) return issue.ruleLevel === 'A' || issue.ruleLevel === 'AA' || issue.ruleLevel === 'AAA';
+    // Default Level AA:
+    return issue.ruleLevel === 'A' || issue.ruleLevel === 'AA';
+  }).map((iss) => {
+    const hash =
+      iss.cryptoHash ||
+      generateEvidenceHash(
+        targetUrl,
+        iss.targetSelector,
+        iss.visualEvidence?.simulatedHtmlPreview || '',
+        iss.wcagCriterion
+      );
+    return {
+      ...iss,
+      cryptoHash: hash,
+      evidenceHash: hash,
+    };
+  });
+
+  // Calculate compliance score strictly from real tested results
+  const testedCount = passedRulesCount + filteredIssues.length;
+  const complianceScore = testedCount > 0 ? Math.round((passedRulesCount / testedCount) * 100) : 100;
+  const score = complianceScore;
 
   addLog(
     4,
-    `Audit Complete: Analyzed live DOM of ${domain}. Found ${issues.length} candidate barrier(s), verified ${passedRulesCount} passing checkpoints. Score: ${score}/100.`,
+    `Audit Complete: Analyzed live DOM of ${domain} against ${targetLevel}. Found ${filteredIssues.length} candidate barrier(s), verified ${passedRulesCount} passing checkpoints. Score: ${score}/100.`,
     'success'
   );
 
@@ -665,12 +658,12 @@ export async function auditLiveWebsite(
     byteSize,
     score,
     passedRulesCount,
-    issues,
+    issues: filteredIssues,
     logs,
     breakdown: {
-      colorContrast: Math.max(70, score - 5),
-      keyboardOperability: Math.max(75, score - 2),
-      ariaSemantics: Math.max(68, score - 8),
+      colorContrast: 'Manual / Testbed Required',
+      keyboardOperability: 'Manual / Testbed Required',
+      ariaSemantics: `${complianceScore}%`,
     },
     domStats,
   };

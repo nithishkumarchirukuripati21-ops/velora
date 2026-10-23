@@ -5,6 +5,7 @@ import {
   AuditMetrics,
   AuditRecord,
   AuditReport,
+  CategoryBreakdown,
   Issue,
   SettingsConfig,
   WCAGLevel,
@@ -111,7 +112,7 @@ interface AuditContextType {
 const AuditContext = createContext<AuditContextType | undefined>(undefined);
 
 export function AuditProvider({ children }: { children: React.ReactNode }) {
-  const [url, setUrl] = useState<string>('https://www.w3.org/WAI/');
+  const [url, setUrl] = useState<string>('');
   const [targetLevel, setTargetLevel] = useState<WCAGLevel>(INITIAL_SETTINGS.defaultLevel);
   const [settings, setSettings] = useState<SettingsConfig>(INITIAL_SETTINGS);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -287,8 +288,18 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
 
     let fetchedPageTitle: string | undefined = undefined;
     let fetchedDomStats: AuditRecord['domStats'] = undefined;
+    let fetchedBreakdown: CategoryBreakdown | undefined = undefined;
 
     try {
+      const activeUserKey =
+        settings.geminiApiKey ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('velora_gemini_user_key') ||
+            localStorage.getItem('velora_gemini_custom_keys') ||
+            localStorage.getItem('velora_gemini_api_key') ||
+            ''
+          : '');
+
       const res = await fetch('/api/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -296,6 +307,8 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
           url: auditUrl,
           targetLevel: auditLevel,
           sandboxState: sandboxToggles,
+          userKey: activeUserKey,
+          model: settings.aiModel,
         }),
       });
 
@@ -304,18 +317,36 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
         evalResult = {
           issues: data.issues || [],
           score: data.score ?? 85,
-          passedRulesCount: 42,
+          passedRulesCount: data.passedRulesCount ?? 42,
         };
         fetchedPageTitle = data.pageTitle;
         fetchedDomStats = data.domStats;
+        if (data.breakdown) {
+          fetchedBreakdown = data.breakdown;
+        }
 
         if (data.logs && data.logs.length > 0) {
+          // Stream Phase 3 logs
           for (const l of data.logs) {
             if (l.phase === 3) {
-              await new Promise((r) => setTimeout(r, 200));
+              await new Promise((r) => setTimeout(r, 100));
               addLog(3, l.text, l.type);
             }
           }
+
+          // Advance to Phase 4: Synthesizing Issues
+          setCurrentStep(4);
+          await new Promise((r) => setTimeout(r, 150));
+
+          // Stream Phase 4 Gemini synthesis logs
+          for (const l of data.logs) {
+            if (l.phase === 4) {
+              await new Promise((r) => setTimeout(r, 200));
+              addLog(4, l.text, l.type);
+            }
+          }
+        } else {
+          setCurrentStep(4);
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
@@ -334,12 +365,11 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // 4. Take Action (Human Approval Gate)
-    await new Promise((res) => setTimeout(res, 500));
+    // Finalize Step 4 (Human Approval Gate)
     setCurrentStep(4);
     addLog(
       4,
-      `Audit Complete: ${evalResult.issues.length} candidate accessibility violations found on ${auditUrl}. Human approval required before logging.`,
+      `Audit Complete: ${evalResult.issues.length} candidate accessibility violations synthesized on ${auditUrl}. Human approval required before logging.`,
       'success'
     );
 
@@ -376,27 +406,37 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
       return [...otherIssues, ...Array.from(map.values())];
     });
 
+    // Calculate compliance score strictly from real tested results
+    const passedRulesCount = evalResult.passedRulesCount ?? 0;
+    const testedCount = passedRulesCount + evalResult.issues.length;
+    const complianceScore = testedCount > 0 ? Math.round((passedRulesCount / testedCount) * 100) : 100;
+
     // Create report record
     const newReport: AuditReport = {
       id: 'rep-' + Math.random().toString(36).substring(2, 7),
       url: auditUrl,
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       targetLevel: auditLevel,
-      overallScore: evalResult.score,
-      breakdown: {
-        colorContrast: sandboxToggles.photoContrastFixed ? 98 : 74,
-        keyboardOperability: sandboxToggles.modalTrapFixed && sandboxToggles.keyboardAccessibilityFixed ? 96 : 76,
-        ariaSemantics: 92,
-      },
+      overallScore: complianceScore,
+      breakdown: fetchedBreakdown || (isLiveWeb
+        ? {
+            colorContrast: 'Manual / Testbed Required',
+            keyboardOperability: 'Manual / Testbed Required',
+            ariaSemantics: `${complianceScore}%`,
+          }
+        : {
+            colorContrast: sandboxToggles.photoContrastFixed ? 98 : 74,
+            keyboardOperability: sandboxToggles.modalTrapFixed && sandboxToggles.keyboardAccessibilityFixed ? 96 : 76,
+            ariaSemantics: 92,
+          }),
       totalIssues: evalResult.issues.length,
-      passedRulesCount: evalResult.passedRulesCount,
+      passedRulesCount: passedRulesCount,
       summary: `Autonomous WCAG audit completed for ${auditUrl}. Identified ${evalResult.issues.length} candidate accessibility barriers requiring human sign-off.`,
     };
 
     setReports((prev) => [newReport, ...prev]);
 
     const finalIssuesCount = evalResult.issues.length;
-    const computedScore = Math.max(20, Math.min(98, Math.round(100 - (finalIssuesCount * 4))));
 
     const completedRecord: AuditRecord = {
       id: `audit-${Date.now()}`,
@@ -404,7 +444,7 @@ export function AuditProvider({ children }: { children: React.ReactNode }) {
       targetLevel: auditLevel || 'WCAG 2.2 Level AA',
       timestamp: new Date().toISOString(),
       issuesCount: finalIssuesCount,
-      score: computedScore,
+      score: complianceScore,
       status: 'completed',
       openIssuesCount: 0,
       resolvedIssuesCount: 0,

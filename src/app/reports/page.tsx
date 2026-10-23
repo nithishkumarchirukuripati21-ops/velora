@@ -35,9 +35,9 @@ export default function ReportsPage() {
 ${report.summary}
 
 ## Category Breakdown
-- **Color Contrast Ratio:** ${report.breakdown.colorContrast}%
-- **Keyboard Operability & Focus Visible:** ${report.breakdown.keyboardOperability}%
-- **ARIA & Structural Semantics:** ${report.breakdown.ariaSemantics}%
+- **Color Contrast Ratio:** ${typeof report.breakdown.colorContrast === 'number' ? `${report.breakdown.colorContrast}%` : report.breakdown.colorContrast}
+- **Keyboard Operability & Focus Visible:** ${typeof report.breakdown.keyboardOperability === 'number' ? `${report.breakdown.keyboardOperability}%` : report.breakdown.keyboardOperability}
+- **ARIA & Structural Semantics:** ${typeof report.breakdown.ariaSemantics === 'number' ? `${report.breakdown.ariaSemantics}%` : report.breakdown.ariaSemantics}
 
 ## Audit Statistics
 - **Total Issues Detected:** ${report.totalIssues}
@@ -64,25 +64,23 @@ ${report.summary}
     <DashboardShell>
       <div className="space-y-6">
         {/* Header Block */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-7 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2 text-blue-600 mb-1">
-                <FileText className="w-4 h-4" />
-                <span className="text-xs font-bold tracking-wider uppercase">
-                  Compliance Archive
-                </span>
+              <div className="inline-flex items-center gap-2 text-cyan-700 dark:text-cyan-400 bg-cyan-50/80 dark:bg-cyan-950/50 border border-cyan-200/60 dark:border-cyan-800 px-3 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase mb-2">
+                <FileText className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>Compliance Archive</span>
               </div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
                 Accessibility Audit Reports
               </h1>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
                 Comprehensive WCAG evaluation records, category breakdown meters, and exportable executive summaries.
               </p>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="bg-blue-50 text-blue-700 px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-blue-200">
+              <div className="bg-cyan-50/80 dark:bg-cyan-950/50 text-cyan-800 dark:text-cyan-300 px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-cyan-200/80 dark:border-cyan-800 shadow-xs">
                 {reports.length} Reports Archived
               </div>
             </div>
@@ -94,88 +92,121 @@ ${report.summary}
           {reports.map((report) => (
             <div
               key={report.id}
-              className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-sm transition-all"
+              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-7 shadow-sm hover:border-cyan-300/80 dark:hover:border-cyan-700/80 hover:shadow-md transition-all group"
             >
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 {/* Left: Info */}
-                <div className="space-y-2 flex-1">
+                <div className="space-y-2.5 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="bg-blue-50 text-blue-600 border border-blue-200 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                    <span className="bg-cyan-50/90 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 border border-cyan-200/70 dark:border-cyan-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">
                       {report.targetLevel}
                     </span>
-                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                    <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 font-mono">
                       <Calendar className="w-3.5 h-3.5" />
                       {report.date}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-slate-400 shrink-0" />
-                    <h2 className="text-base font-bold text-slate-900">
+                    <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition-colors">
                       {report.url}
                     </h2>
                   </div>
 
-                  <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
                     {report.summary}
                   </p>
                 </div>
 
                 {/* Middle: Category Breakdown Meters */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 shrink-0 lg:px-6 lg:border-x lg:border-slate-100">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 shrink-0 lg:px-6 lg:border-x lg:border-slate-200/70 dark:lg:border-slate-800">
                   {/* Overall Score Badge */}
                   <div className="text-center shrink-0">
                     <div
                       className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center font-bold shadow-xs ${
                         report.overallScore >= 90
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800'
+                          : 'bg-cyan-50/90 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 border border-cyan-200/80 dark:border-cyan-800'
                       }`}
                     >
-                      <span className="text-xl leading-none">{report.overallScore}%</span>
-                      <span className="text-[9px] uppercase tracking-wider mt-0.5 opacity-80">
+                      <span className="text-xl leading-none font-black">{report.overallScore}%</span>
+                      <span className="text-[9px] uppercase tracking-wider mt-1 opacity-80 font-bold">
                         Score
                       </span>
                     </div>
                   </div>
 
                   {/* Meters */}
-                  <div className="space-y-2 w-48 text-xs">
+                  <div className="space-y-2.5 w-52 text-xs">
                     <div>
-                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-0.5">
+                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
                         <span>Color Contrast</span>
-                        <span className="font-bold">{report.breakdown.colorContrast}%</span>
+                        <span className="font-bold text-slate-900 font-mono">
+                          {typeof report.breakdown.colorContrast === 'number'
+                            ? `${report.breakdown.colorContrast}%`
+                            : report.breakdown.colorContrast}
+                        </span>
                       </div>
                       <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-blue-600 rounded-full"
-                          style={{ width: `${report.breakdown.colorContrast}%` }}
+                          className="h-full bg-cyan-500 rounded-full"
+                          style={{
+                            width:
+                              typeof report.breakdown.colorContrast === 'number'
+                                ? `${report.breakdown.colorContrast}%`
+                                : typeof report.breakdown.colorContrast === 'string' && report.breakdown.colorContrast.endsWith('%')
+                                ? report.breakdown.colorContrast
+                                : '100%',
+                          }}
                         />
                       </div>
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-0.5">
+                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
                         <span>Keyboard Nav</span>
-                        <span className="font-bold">{report.breakdown.keyboardOperability}%</span>
+                        <span className="font-bold text-slate-900 font-mono">
+                          {typeof report.breakdown.keyboardOperability === 'number'
+                            ? `${report.breakdown.keyboardOperability}%`
+                            : report.breakdown.keyboardOperability}
+                        </span>
                       </div>
                       <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-purple-600 rounded-full"
-                          style={{ width: `${report.breakdown.keyboardOperability}%` }}
+                          className="h-full bg-sky-500 rounded-full"
+                          style={{
+                            width:
+                              typeof report.breakdown.keyboardOperability === 'number'
+                                ? `${report.breakdown.keyboardOperability}%`
+                                : typeof report.breakdown.keyboardOperability === 'string' && report.breakdown.keyboardOperability.endsWith('%')
+                                ? report.breakdown.keyboardOperability
+                                : '100%',
+                          }}
                         />
                       </div>
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-0.5">
+                      <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
                         <span>ARIA & Semantics</span>
-                        <span className="font-bold">{report.breakdown.ariaSemantics}%</span>
+                        <span className="font-bold text-slate-900 font-mono">
+                          {typeof report.breakdown.ariaSemantics === 'number'
+                            ? `${report.breakdown.ariaSemantics}%`
+                            : report.breakdown.ariaSemantics}
+                        </span>
                       </div>
                       <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-emerald-500 rounded-full"
-                          style={{ width: `${report.breakdown.ariaSemantics}%` }}
+                          style={{
+                            width:
+                              typeof report.breakdown.ariaSemantics === 'number'
+                                ? `${report.breakdown.ariaSemantics}%`
+                                : typeof report.breakdown.ariaSemantics === 'string' && report.breakdown.ariaSemantics.endsWith('%')
+                                ? report.breakdown.ariaSemantics
+                                : '100%',
+                          }}
                         />
                       </div>
                     </div>
@@ -187,7 +218,7 @@ ${report.summary}
                   <button
                     type="button"
                     onClick={() => setSelectedReport(report)}
-                    className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/70 border border-slate-200/60 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5 text-slate-500" />
                     <span>View Full Report</span>
@@ -196,7 +227,7 @@ ${report.summary}
                   <button
                     type="button"
                     onClick={() => handleExportMarkdown(report)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 active:scale-[0.98] transition-all flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Export Markdown</span>
@@ -209,62 +240,62 @@ ${report.summary}
 
         {/* Modal: Full Report Details */}
         {selectedReport && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-            <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200 relative max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200/90 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 relative max-h-[90vh] overflow-y-auto">
               <button
                 type="button"
                 onClick={() => setSelectedReport(null)}
-                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100"
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 aria-label="Close report modal"
               >
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center gap-2 text-blue-600 text-xs font-bold uppercase tracking-wider mb-1">
-                <FileText className="w-4 h-4" />
+              <div className="inline-flex items-center gap-2 text-cyan-700 dark:text-cyan-400 bg-cyan-50/80 dark:bg-cyan-950/50 border border-cyan-200/60 dark:border-cyan-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
+                <FileText className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                 <span>Audited Report Details</span>
               </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-1">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1">
                 {selectedReport.url}
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Audited against {selectedReport.targetLevel} on {selectedReport.date}
               </p>
 
               <div className="grid grid-cols-3 gap-3 my-6">
-                <div className="bg-blue-50/70 border border-blue-100 p-3.5 rounded-2xl text-center">
-                  <span className="text-xs text-blue-600 font-medium">Compliance</span>
-                  <p className="text-xl font-extrabold text-blue-700 mt-1">
+                <div className="bg-cyan-50/70 border border-cyan-100 p-3.5 rounded-2xl text-center">
+                  <span className="text-xs text-cyan-700 font-medium">Compliance</span>
+                  <p className="text-xl font-black text-cyan-800 mt-1 font-mono">
                     {selectedReport.overallScore}%
                   </p>
                 </div>
-                <div className="bg-purple-50/70 border border-purple-100 p-3.5 rounded-2xl text-center">
-                  <span className="text-xs text-purple-600 font-medium">Rules Passed</span>
-                  <p className="text-xl font-extrabold text-purple-700 mt-1">
+                <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-2xl text-center">
+                  <span className="text-xs text-emerald-700 font-medium">Rules Passed</span>
+                  <p className="text-xl font-black text-emerald-800 mt-1 font-mono">
                     {selectedReport.passedRulesCount}
                   </p>
                 </div>
                 <div className="bg-amber-50/70 border border-amber-100 p-3.5 rounded-2xl text-center">
-                  <span className="text-xs text-amber-600 font-medium">Candidate Issues</span>
-                  <p className="text-xl font-extrabold text-amber-700 mt-1">
+                  <span className="text-xs text-amber-700 font-medium">Candidate Issues</span>
+                  <p className="text-xl font-black text-amber-800 mt-1 font-mono">
                     {selectedReport.totalIssues}
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-4 text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-4">
-                <h4 className="font-bold text-slate-800 text-sm">Findings & Assessment</h4>
+              <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/70 dark:border-slate-800 pt-4">
+                <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">Findings & Assessment</h4>
                 <p>{selectedReport.summary}</p>
                 <p>
                   Automated checks verified ARIA roles, landmarks, page language attributes, alt tags, and keyboard operability sequences up to the configured limit.
                 </p>
               </div>
 
-              <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100">
+              <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-200/70">
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
                 >
                   Close
                 </button>
@@ -274,7 +305,7 @@ ${report.summary}
                     handleExportMarkdown(selectedReport);
                     setSelectedReport(null);
                   }}
-                  className="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-xs flex items-center gap-2"
+                  className="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 shadow-sm shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-[0.98]"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download Markdown Report</span>

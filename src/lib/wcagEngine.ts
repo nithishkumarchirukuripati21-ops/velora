@@ -1,4 +1,10 @@
+import crypto from 'crypto';
 import { Issue, SandboxToggles, VisualDiffEvidence, WCAGLevel } from '@/types/audit';
+
+export function generateEvidenceHash(url: string, selector: string, snippet: string, rule: string): string {
+  const payload = `${url}::${selector}::${snippet}::${rule}`;
+  return 'sha256:' + crypto.createHash('sha256').update(payload).digest('hex');
+}
 
 /**
  * Calculates WCAG 2.1 relative luminance
@@ -110,7 +116,12 @@ export function evaluateSandboxAudit(
         'Keyboard focus is trapped within the dialog container during Tab traversal. Sequential keyboard navigation cannot exit to page landmarks, and the Escape key listener is not registered.',
       impact:
         'Keyboard-only and switch-access users are permanently stuck inside the dialog container and prevented from reaching any other part of the application.',
-      cryptoHash: 'sha256:4a8f9c1b3e5d7a2f0e9b8c7d6a5e4f3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e',
+      cryptoHash: generateEvidenceHash(
+        '/sandbox',
+        'div#interactive-modal[role="dialog"]',
+        '<div id="interactive-modal" role="dialog" aria-modal="true"><button>Confirm</button><button class="close">X</button></div>',
+        'WCAG 2.1.2 No Keyboard Trap (Level A)'
+      ),
       retrievalTime: isoNow,
       createdAt: 'Just now',
       keyboardTrace: {
@@ -140,7 +151,7 @@ dialog.addEventListener('keydown', (e) => {
     trapFocusCycle(e, dialog);
   }
 });`,
-        afterCode: `// Remediated: Escape dismisses dialog and restores focus
+        afterCode: `// Proposed Remediation Patch (Developer Review Required)
 dialog.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeDialogAndRestoreFocus();
@@ -175,7 +186,12 @@ dialog.addEventListener('keydown', (e) => {
         'Static syntax and styling rules passed, but VELORA Simulated Keyboard Traversal identified that the custom interactive control lacks tabindex="0" and keyboard activation handlers (Enter/Space), rendering it completely unreachable via keyboard.',
       impact:
         'Keyboard-only navigation users cannot focus on, navigate to, or activate this primary action control.',
-      cryptoHash: 'sha256:8b2e1f4a9c3d5e7f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
+      cryptoHash: generateEvidenceHash(
+        '/sandbox',
+        'div.btn-custom-action[role="button"]',
+        '<div role="button" class="btn-custom-action">View Details</div>',
+        'WCAG 2.1.1 Keyboard Operable (Level A)'
+      ),
       retrievalTime: isoNow,
       createdAt: 'Just now',
       visualEvidence: {
@@ -190,7 +206,7 @@ dialog.addEventListener('keydown', (e) => {
 <div role="button" class="btn-custom-action" onclick="handleClick()">
   View Details
 </div>`,
-        afterCode: `<!-- Remediated: Keyboard operable with visible focus ring -->
+        afterCode: `<!-- Proposed Remediation Patch (Developer Review Required) -->
 <div
   role="button"
   tabindex="0"
@@ -207,11 +223,17 @@ dialog.addEventListener('keydown', (e) => {
     passedCount += 1;
   }
 
-  // Barrier 3: Insufficient Contrast Over Complex Photographic Background (WCAG 1.4.3 Level AA - Serious)
+  // Barrier 3: Insufficient Contrast Over Complex Photographic Background (WCAG 1.4.3 Level AA / WCAG 1.4.6 Level AAA)
+  const isLevelAOnly = targetLevel === 'WCAG 2.1 Level A';
+  const isAAA = targetLevel.includes('AAA');
   const photoMeasuredRatio = isPhotoFixed ? 10.4 : 2.3;
-  const requiresRatio = targetLevel.includes('AAA') ? 7.0 : 4.5;
+  const requiresRatio = isAAA ? 7.0 : 4.5;
+  const criterionText = isAAA
+    ? 'WCAG 1.4.6 Contrast (Enhanced) - Level AAA'
+    : 'WCAG 1.4.3 Contrast (Minimum) - Level AA';
+  const ruleLevelText: 'A' | 'AA' | 'AAA' = isAAA ? 'AAA' : 'AA';
 
-  if (!isPhotoFixed) {
+  if (!isPhotoFixed && !isLevelAOnly) {
     issues.push({
       id: 'TC3-PHOTO-CONTRAST',
       testCaseId: 'TC3',
@@ -219,19 +241,28 @@ dialog.addEventListener('keydown', (e) => {
       url: '/sandbox',
       namedSource: 'Interactive Demo Testbed DOM (/sandbox)',
       destinationLedger: 'Project Issue Ledger',
-      title: 'Insufficient Contrast Over Complex Photographic Background',
-      wcagCriterion: 'WCAG 1.4.3 Contrast (Minimum) - Level AA',
-      ruleLevel: 'AA',
+      title: isAAA
+        ? 'Insufficient Enhanced Contrast Over Complex Photographic Background (7:1 Minimum)'
+        : 'Insufficient Contrast Over Complex Photographic Background',
+      wcagCriterion: criterionText,
+      ruleLevel: ruleLevelText,
       severity: 'critical',
       status: 'pending_approval',
       targetSelector: 'div#photo-hero-card p.photo-overlay-text',
-      decisionReason:
-        'Decision Rule (Pixel Luminance Sampling): Underlying photographic image luminance measured under text bounding box (2.3:1). Missing solid background evidence resolved via sub-pixel canvas luminance sampling. Flagged as Contrast Failure against 4.5:1 threshold per WCAG 1.4.3.',
-      description:
-        'Text rendered over multi-colored photographic background yields a sampled contrast ratio of 2.3:1 against underlying pixel luminance values, failing the mandatory 4.5:1 minimum threshold for WCAG 1.4.3 Level AA.',
+      decisionReason: isAAA
+        ? `Decision Rule (Pixel Luminance Sampling): Underlying photographic image luminance measured under text bounding box (${photoMeasuredRatio}:1). Fails strict 7:1 AAA enhanced contrast threshold per WCAG 1.4.6.`
+        : 'Decision Rule (Pixel Luminance Sampling): Underlying photographic image luminance measured under text bounding box (2.3:1). Missing solid background evidence resolved via sub-pixel canvas luminance sampling. Flagged as Contrast Failure against 4.5:1 threshold per WCAG 1.4.3.',
+      description: isAAA
+        ? `Text rendered over multi-colored photographic background yields a sampled contrast ratio of ${photoMeasuredRatio}:1, failing the mandatory 7:1 enhanced threshold for WCAG 1.4.6 Level AAA.`
+        : 'Text rendered over multi-colored photographic background yields a sampled contrast ratio of 2.3:1 against underlying pixel luminance values, failing the mandatory 4.5:1 minimum threshold for WCAG 1.4.3 Level AA.',
       impact:
         'Users with low vision, aging eyes, or users in high ambient glare environments cannot read text overlaid directly on complex imagery.',
-      cryptoHash: 'sha256:3c5e7f9a1b2d4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f',
+      cryptoHash: generateEvidenceHash(
+        '/sandbox',
+        'div#photo-hero-card p.photo-overlay-text',
+        '<div class="photo-bg"><p style="color:#94a3b8">Autonomous AI Governance</p></div>',
+        criterionText
+      ),
       retrievalTime: isoNow,
       createdAt: 'Just now',
       contrastSampleDetails: {
@@ -247,8 +278,8 @@ dialog.addEventListener('keydown', (e) => {
           '<div class="photo-bg"><p style="color:#94a3b8">Autonomous AI Governance</p></div>',
         boundingHighlight: 'border-2 border-rose-500 ring-4 ring-rose-500/20',
         contrastDetails: {
-          current: `${photoMeasuredRatio}:1 (Fails AA)`,
-          required: `${requiresRatio}:1 (Minimum)`,
+          current: `${photoMeasuredRatio}:1 (${isPhotoFixed ? 'Passes' : isAAA ? 'Fails AAA' : 'Fails AA'})`,
+          required: `${requiresRatio}:1 (${isAAA ? 'Enhanced AAA' : 'Minimum AA'})`,
         },
       },
       aiRemediation: {
@@ -259,7 +290,7 @@ dialog.addEventListener('keydown', (e) => {
   color: #94a3b8;
   background: transparent;
 }`,
-        afterCode: `/* Remediated: 10.4:1 contrast with semi-transparent dark scrim */
+        afterCode: `/* Proposed Remediation Patch (Developer Review Required) */
 .photo-overlay-text {
   color: #ffffff;
   background: rgba(0, 0, 0, 0.7);
@@ -274,11 +305,15 @@ dialog.addEventListener('keydown', (e) => {
     passedCount += 1;
   }
 
-  // Calculate score
   const totalChecked = passedCount + issues.length;
-  const score = Math.round((passedCount / totalChecked) * 100);
+  const score = totalChecked > 0 ? Math.round((passedCount / totalChecked) * 100) : 100;
 
-  return { issues, score, passedRulesCount: passedCount };
+  const finalizedIssues = issues.map((iss) => ({
+    ...iss,
+    evidenceHash: iss.cryptoHash,
+  }));
+
+  return { issues: finalizedIssues, score, passedRulesCount: passedCount };
 }
 
 /**

@@ -5,25 +5,25 @@ import { ShieldCheck } from 'lucide-react';
 
 export function OurGoalCard() {
   return (
-    <div className="relative overflow-hidden bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between h-full min-h-[220px]">
+    <div className="relative overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px]">
       <div>
         {/* Shield Icon Badge */}
-        <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 mb-4 shadow-xs">
+        <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-4 shadow-xs">
           <ShieldCheck className="w-6 h-6 stroke-[2.2]" />
         </div>
 
         {/* Heading */}
-        <h2 className="text-base font-bold text-slate-900 tracking-tight mb-2">
-          Our Goal
+        <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight mb-2">
+          Enterprise Mission
         </h2>
 
         {/* Description */}
-        <p className="text-xs font-normal text-slate-500 leading-relaxed max-w-[260px]">
-          Identify and help fix accessibility barriers so everyone can access the web.
+        <p className="text-xs font-normal text-slate-600 dark:text-slate-400 leading-relaxed max-w-[260px]">
+          Identify, trace, and autonomously remediate accessibility barriers with cryptographic ledger verification.
         </p>
       </div>
 
-      {/* Subtle Botanical Leaf Silhouette Watermark */}
+      {/* Subtle Silhouette Watermark */}
       <div className="absolute -bottom-3 -right-3 pointer-events-none opacity-40">
         <svg
           width="110"

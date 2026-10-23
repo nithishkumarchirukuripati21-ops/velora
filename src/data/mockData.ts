@@ -3,7 +3,7 @@ import { Issue, AuditReport, SettingsConfig } from '@/types/audit';
 export const INITIAL_SETTINGS: SettingsConfig = {
   defaultLevel: 'WCAG 2.2 Level AA',
   keyboardDepth: 50,
-  aiModel: 'Claude 3.5 Sonnet',
+  aiModel: 'Gemini 1.5 Flash',
 };
 
 export const INITIAL_ISSUES: Issue[] = [

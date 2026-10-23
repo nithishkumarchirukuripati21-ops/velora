@@ -77,6 +77,7 @@ export interface Issue {
   createdAt: string;
   retrievalTime: string; // ISO string e.g. 2026-10-20T06:15:00.000Z
   namedSource?: string; // Named source e.g. "Interactive Demo Testbed DOM (/sandbox)" or "Live Website DOM (w3.org)"
+  issueType?: string; // Classification e.g. "Best Practice Advisory (WCAG 1.3.1 Structure)"
   decisionReason?: string; // Decision rule rationale combining automated checks + keyboard exploration
   destinationLedger?: string; // Proposed destination e.g. "Project Issue Ledger"
   resolvedAt?: string;
@@ -84,12 +85,16 @@ export interface Issue {
   disagreementBadge?: string;
   keyboardTrace?: KeyboardTraceSequence;
   cryptoHash?: string;
+  evidenceHash?: string;
   contrastSampleDetails?: ContrastSampleDetails;
   lastRetestResult?: {
     resolved: boolean;
     message: string;
     timestamp: string;
   };
+  aiGenerated?: boolean;
+  aiModel?: string;
+  aiKeyUsed?: string;
 }
 
 export interface AuditRecord {
@@ -111,6 +116,8 @@ export interface AuditRecord {
     images: number;
     formControls: number;
   };
+  aiStatus?: 'active_gemini_synthesis' | 'deterministic_fallback';
+  keyUsed?: string;
 }
 
 export interface AuditMetrics {
@@ -120,17 +127,19 @@ export interface AuditMetrics {
   pending: number;
 }
 
+export interface CategoryBreakdown {
+  colorContrast: number | string;
+  keyboardOperability: number | string;
+  ariaSemantics: number | string;
+}
+
 export interface AuditReport {
   id: string;
   url: string;
   date: string;
   targetLevel: WCAGLevel;
   overallScore: number;
-  breakdown: {
-    colorContrast: number;
-    keyboardOperability: number;
-    ariaSemantics: number;
-  };
+  breakdown: CategoryBreakdown;
   totalIssues: number;
   passedRulesCount: number;
   summary: string;
@@ -178,6 +187,10 @@ export interface AuditApiRequest {
   url: string;
   targetLevel?: WCAGLevel;
   sandboxState?: SandboxToggles;
+  userKey?: string;
+  apiKey?: string;
+  customKeys?: string;
+  model?: string;
 }
 
 export interface AuditApiResponse {
@@ -186,12 +199,9 @@ export interface AuditApiResponse {
   targetLevel: WCAGLevel;
   timestamp: string;
   score: number;
+  passedRulesCount?: number;
   issues: Issue[];
-  breakdown: {
-    colorContrast: number;
-    keyboardOperability: number;
-    ariaSemantics: number;
-  };
+  breakdown: CategoryBreakdown;
   summary: string;
   logs: AgentLogMessage[];
   pageTitle?: string;
@@ -201,6 +211,9 @@ export interface AuditApiResponse {
     images: number;
     formControls: number;
   };
+  aiStatus?: 'active_gemini_synthesis' | 'deterministic_fallback';
+  keyUsed?: string;
+  model?: string;
 }
 
 export interface RetestApiRequest {

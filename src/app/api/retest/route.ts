@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { evaluateRetest, isDemoTarget } from '@/lib/wcagEngine';
-import { isPermittedUrl } from '@/lib/liveAuditor';
+import { validatePublicTarget } from '@/lib/liveAuditor';
 import { RetestApiRequest, RetestApiResponse, VisualDiffEvidence } from '@/types/audit';
 import * as cheerio from 'cheerio';
 
@@ -34,13 +34,13 @@ export async function POST(req: NextRequest) {
     // Case 1: Handle Live Web Issue Retest
     if (isLiveUrl) {
       if (targetUrl) {
-        const permission = isPermittedUrl(targetUrl);
-        if (!permission.valid) {
+        const validation = await validatePublicTarget(targetUrl);
+        if (!validation.valid) {
           return NextResponse.json(
             {
               error: 'Security Policy Restriction',
               message:
-                permission.reason ||
+                validation.error ||
                 'Security policy restriction: Requests to private, loopback, or cloud-metadata network addresses are prohibited (SSRF prevention).',
             },
             { status: 400 }
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
               'Accept-Language': 'en-US,en;q=0.9',
             },
             signal: controller.signal,
+            redirect: 'error',
           });
           clearTimeout(timeout);
 
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
         const alt = targetEl.attr('alt');
         const isResolved = typeof alt !== 'undefined';
         const message = isResolved
-          ? `Verified: Element ${targetSelector} specifies accessible alt attribute (alt="${alt}").`
+          ? `Verified: Element ${targetSelector} specifies accessible alt attribute (${alt === '' ? 'marked decorative alt=""' : `alt="${alt}"`}).`
           : `Retest Failed: Element ${targetSelector} is still missing an alt attribute in live DOM on ${domain}.`;
 
         return NextResponse.json({
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
             },
             afterState: {
               label: isResolved ? 'Remediated State' : 'Still Non-Compliant',
-              statusBadge: isResolved ? `PASS: alt="${alt}" verified` : 'FAIL: Missing Alt Attribute',
+              statusBadge: isResolved ? (alt === '' ? 'PASS: alt="" decorative verified' : `PASS: alt="${alt}" verified`) : 'FAIL: Missing Alt Attribute',
               previewText: targetSelector,
             },
           },

@@ -1,8 +1,14 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f3f6fc;
+  --background: #f8fafc;
   --foreground: #0f172a;
+}
+
+.dark {
+  --background: #0b0f19;
+  --foreground: #f8fafc;
 }
 
 body {
@@ -270,4 +276,60 @@ body {
 .animate-inspection-beam {
   animation: beam-pulse 2.8s ease-in-out infinite;
 }
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker-infinite {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 32s linear infinite;
+}
+
+.animate-ticker-infinite:hover {
+  animation-play-state: paused;
+}
+
+@keyframes laser-glow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scaleX(0.96);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scaleX(1.04);
+  }
+}
+
+.animate-laser-sweep {
+  animation: laser-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes conduit-flow {
+  0% {
+    stroke-dashoffset: 40;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-conduit {
+  stroke-dasharray: 6 6;
+  animation: conduit-flow 1.5s linear infinite;
+}
+
+/* Hide Next.js dev overlay indicator and toast */
+nextjs-portal,
+[data-nextjs-toast],
+[data-nextjs-dev-tools-indicator] {
+  display: none !important;
+}
+
 

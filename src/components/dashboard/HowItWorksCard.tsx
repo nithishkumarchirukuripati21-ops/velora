@@ -10,40 +10,40 @@ export function HowItWorksCard() {
   const steps = [
     {
       num: 1,
-      title: 'Collect the details',
-      desc: 'Provide the website URL and target level.',
-      color: 'bg-blue-600 text-white',
-      glow: 'ring-4 ring-blue-100',
+      title: 'Target Calibration',
+      desc: 'Specify target URL and select conformance standard (A, AA, AAA).',
+      color: 'bg-cyan-600 text-white',
+      glow: 'ring-4 ring-cyan-100',
     },
     {
       num: 2,
-      title: 'Plan the next steps',
-      desc: 'Combines automated checks with keyboard testing.',
-      color: 'bg-purple-600 text-white',
-      glow: 'ring-4 ring-purple-100',
+      title: 'Real DOM Traversal',
+      desc: 'Simulate screen-reader focus tab loops and DOM hierarchy inspection.',
+      color: 'bg-sky-600 text-white',
+      glow: 'ring-4 ring-sky-100',
     },
     {
       num: 3,
-      title: 'Find the information',
-      desc: 'Audit the website pages using a real browser.',
-      color: 'bg-emerald-500 text-white',
+      title: 'Gemini 3-Key Analysis',
+      desc: 'Active failover network synthesizes exact WCAG violations and fixes.',
+      color: 'bg-emerald-600 text-white',
       glow: 'ring-4 ring-emerald-100',
     },
     {
       num: 4,
-      title: 'Take action',
-      desc: 'Human approval required. Logs issues.',
-      color: 'bg-amber-500 text-white',
-      glow: 'ring-4 ring-amber-100',
+      title: 'Ledger Verification',
+      desc: 'Remediate code with human approval and cryptographic proof.',
+      color: 'bg-indigo-600 text-white',
+      glow: 'ring-4 ring-indigo-100',
     },
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between h-full min-h-[380px]">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm flex flex-col justify-between h-full min-h-[380px]">
       {/* Header */}
-      <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100/70">
-        <Lightbulb className="w-4 h-4 text-blue-600" />
-        <h2 className="text-sm font-bold text-slate-900">How It Works</h2>
+      <div className="flex items-center gap-2.5 pb-4 border-b border-slate-200/70 dark:border-slate-800">
+        <Lightbulb className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Autonomous Workflow</h2>
       </div>
 
       {/* 4 Steps Vertical Workflow */}
@@ -59,7 +59,7 @@ export function HowItWorksCard() {
               {!isLast && (
                 <div
                   className={`absolute top-7 left-3.5 -ml-px w-0.5 h-9 transition-colors ${
-                    isCompleted ? 'bg-blue-300' : 'bg-slate-100'
+                    isCompleted ? 'bg-cyan-400' : 'bg-slate-200/80 dark:bg-slate-700'
                   }`}
                   aria-hidden="true"
                 />
@@ -67,19 +67,19 @@ export function HowItWorksCard() {
 
               {/* Step Badge */}
               <div
-                className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 transition-all ${
+                className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shrink-0 font-mono transition-all ${
                   step.color
-                } ${isCurrent ? step.glow + ' scale-110' : ''}`}
+                } ${isCurrent ? step.glow + ' scale-110 ring-cyan-200' : ''}`}
               >
                 {step.num}
               </div>
 
               {/* Step Text */}
               <div className="pt-0.5 pb-3">
-                <p className="text-xs font-bold text-slate-900 leading-snug">
+                <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug">
                   {step.title}
                 </p>
-                <p className="text-[11px] text-slate-400 font-normal leading-relaxed mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal leading-relaxed mt-0.5">
                   {step.desc}
                 </p>
               </div>

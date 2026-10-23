@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { geminiNetwork } from '@/lib/geminiKeyManager';
 
 interface RemediateRequestBody {
   elementSnippet?: string;
@@ -7,6 +8,21 @@ interface RemediateRequestBody {
   issueDescription?: string;
   targetSelector?: string;
   apiKey?: string;
+  customKeys?: string;
+  userKey?: string;
+  model?: string;
+}
+
+function normalizeModelName(inputModel?: string): string {
+  if (!inputModel) return 'gemini-1.5-flash';
+  const lower = inputModel.toLowerCase().trim();
+  if (lower.includes('2.0') || lower.includes('gemini-2.0')) {
+    return 'gemini-2.0-flash';
+  }
+  if (lower.includes('pro') || lower.includes('gemini-1.5-pro')) {
+    return 'gemini-1.5-pro';
+  }
+  return 'gemini-1.5-flash';
 }
 
 export async function POST(req: NextRequest) {
@@ -24,17 +40,18 @@ export async function POST(req: NextRequest) {
       criterion = 'WCAG 2.2 AA',
       issueDescription = 'Accessibility barrier detected on interactive or sensory element.',
       targetSelector = 'element',
+      model,
     } = body;
 
-    // Retrieve API key from request body (passed by user in settings) or environment
-    const apiKey = (body.apiKey?.trim() || process.env.GEMINI_API_KEY || '').trim();
+    // Refresh user override key if supplied in the request body
+    const userProvidedKey = body.userKey ?? body.customKeys ?? body.apiKey;
+    if (userProvidedKey !== undefined) {
+      geminiNetwork.setUserKey(userProvidedKey);
+    }
 
-    // Case 1: Real Google Gemini API Call if Key is Present
-    if (apiKey) {
-      try {
-        console.log(`[AI Engine] Dispatching real LLM remediation request to Google Gemini (gemini-1.5-flash)...`);
+    const targetModel = normalizeModelName(model);
 
-        const prompt = `You are a world-class accessibility engineer specialized in WCAG 2.2 AA and WAI-ARIA standards.
+    const prompt = `You are a world-class accessibility engineer specialized in WCAG 2.2 AA and WAI-ARIA standards.
 Analyze this non-compliant HTML element and generate an accurate, production-ready remediation code patch.
 
 WCAG Violation Rule: ${wcagRule} (${criterion})
@@ -53,80 +70,100 @@ You must respond with ONLY a valid, parseable JSON object matching this exact sc
   "remediatedSnippet": "The fully accessible, production-ready HTML/CSS/JS patch with proper ARIA attributes, semantic tags, or contrast values."
 }`;
 
-        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const promptBody = {
+      contents: [
+        {
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+      },
+    };
 
-        const geminiResponse = await fetch(geminiEndpoint, {
+    // Dispatch request through the 3-Key Resilient Gemini Network with Auto Failover
+    try {
+      const outcome = await geminiNetwork.executeWithAutoFailover(async (activeKey) => {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel || 'gemini-1.5-flash'}:generateContent`;
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'x-goog-api-key': activeKey,
           },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json',
-            },
-          }),
-          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify(promptBody),
+          signal: AbortSignal.timeout(12000),
         });
 
-        if (geminiResponse.ok) {
-          const data = await geminiResponse.json();
-          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-          // Clean any markdown fences if present
-          const jsonText = rawText.replace(/```json\n?|\n?```/gi, '').trim();
-          const parsed = JSON.parse(jsonText);
-
-          if (parsed && parsed.remediatedSnippet) {
-            console.log(`[AI Engine] Successfully generated real LLM remediation patch via Gemini 1.5 Flash.`);
-            return NextResponse.json({
-              success: true,
-              status: 'live_ai',
-              provider: 'Google Gemini (gemini-1.5-flash)',
-              remediation: {
-                explanation: parsed.explanation || 'Remediated for full WCAG 2.2 AA compliance.',
-                beforeSnippet: parsed.beforeSnippet || elementSnippet,
-                remediatedSnippet: parsed.remediatedSnippet,
-                beforeCode: parsed.beforeSnippet || elementSnippet,
-                afterCode: parsed.remediatedSnippet,
-                language: 'html',
-                provider: 'Google Gemini 1.5 Flash',
-              },
-            });
-          }
-        } else {
-          const errText = await geminiResponse.text();
-          console.warn(`[AI Engine] Gemini API returned status ${geminiResponse.status}: ${errText}. Falling back to deterministic templates.`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          const err = new Error(errorText);
+          (err as unknown as { status: number; statusCode: number }).status = response.status;
+          (err as unknown as { status: number; statusCode: number }).statusCode = response.status;
+          throw err;
         }
-      } catch (geminiErr: unknown) {
-        const error = geminiErr as Error;
-        console.warn(`[AI Engine] Gemini API call failed (${error.message}). Falling back to deterministic templates.`);
-      }
-    } else {
-      console.log(`[AI Engine] Gemini API key not detected. Using deterministic WCAG rule templates.`);
+
+        const data = await response.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonText = rawText.replace(/```json\n?|\n?```/gi, '').trim();
+        const parsed = JSON.parse(jsonText);
+
+        if (!parsed || !parsed.remediatedSnippet) {
+          throw new Error('Malformed JSON received from model');
+        }
+
+        return parsed as { explanation: string; beforeSnippet: string; remediatedSnippet: string };
+      });
+
+      const json = outcome.data;
+      return NextResponse.json({
+        success: true,
+        status: 'live_ai',
+        provider: 'gemini_network',
+        keyUsed: outcome.keyUsed,
+        tierUsed: outcome.tier,
+        failoverHops: outcome.rotated ? 1 : 0,
+        explanation: json.explanation,
+        beforeSnippet: json.beforeSnippet || elementSnippet,
+        remediatedSnippet: json.remediatedSnippet,
+        remediation: {
+          explanation: json.explanation || 'Remediated for full WCAG 2.2 AA compliance.',
+          beforeSnippet: json.beforeSnippet || elementSnippet,
+          remediatedSnippet: json.remediatedSnippet,
+          beforeCode: json.beforeSnippet || elementSnippet,
+          afterCode: json.remediatedSnippet,
+          language: 'html',
+          provider: `Google Gemini (${outcome.keyUsed} via ${outcome.tier})`,
+        },
+      });
+    } catch (err: unknown) {
+      const error = err as Error;
+      const isExhausted =
+        error.message === 'ALL_KEYS_EXHAUSTED_OR_RATE_LIMITED' ||
+        error.message.includes('ALL_KEYS_EXHAUSTED');
+
+      const fallbackRemediation = generateDeterministicRemediation(
+        wcagRule,
+        criterion,
+        elementSnippet,
+        targetSelector,
+        issueDescription
+      );
+
+      return NextResponse.json({
+        success: true,
+        status: 'fallback_rules',
+        provider: 'deterministic_wcag_templates',
+        message: isExhausted
+          ? 'All 3 Gemini system keys are currently rate-limited on the free tier. Serving deterministic WCAG rule patch.'
+          : error.message || 'Serving deterministic WCAG rule patch.',
+        explanation: fallbackRemediation.explanation,
+        beforeSnippet: fallbackRemediation.beforeSnippet,
+        remediatedSnippet: fallbackRemediation.remediatedSnippet,
+        remediation: fallbackRemediation,
+      });
     }
-
-    // Case 2: Graceful Deterministic Rule-Based Fallback
-    const fallbackRemediation = generateDeterministicRemediation(
-      wcagRule,
-      criterion,
-      elementSnippet,
-      targetSelector,
-      issueDescription
-    );
-
-    return NextResponse.json({
-      success: true,
-      status: 'fallback_rules',
-      provider: 'Deterministic WCAG Template Engine',
-      fallback: true,
-      remediation: fallbackRemediation,
-    });
   } catch (err: unknown) {
     const error = err as Error;
     return NextResponse.json(
